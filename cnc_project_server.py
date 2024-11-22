@@ -5,7 +5,6 @@ import os
 import rsa
 import socket
 import threading
-import time
 
 
 # response codes
@@ -26,7 +25,7 @@ class Response(Enum):
 def get_ip():
   # create a socket and connect to a random address (totally not sketchy)
   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-  s.connect(('10.0.0.0', 4451))
+  s.connect(('10.0.0.0', 4500))
 
   # get the IP address the server connected to the random address with
   ip = s.getsockname()[0]
@@ -38,7 +37,7 @@ def get_ip():
 
 
 IP = get_ip()
-PORT = 4461
+PORT = 4453
 ADDR = (IP, PORT)
 SIZE = 1024
 FORMAT = "utf-8"
@@ -70,12 +69,15 @@ def handle_client(conn, addr):
 
   # send the client the session ID and the public key for password encryption
   conn.sendall(PUBLIC_KEY.save_pkcs1())
-  time.sleep(5)
+  wait_for_ack(conn)
+  print(f"{prefix} Client recieved public key")
+
   conn.sendall(bytes(session_id))
+  wait_for_ack(conn)
+  print(f"{prefix} Client recieved session ID")
 
   cur_user = None
   num_login_attempts = 0
-
 
   # remove later!!!!!!!!!!!!
   cur_user = 'test'
@@ -288,7 +290,7 @@ def handle_client(conn, addr):
           send_message(conn, Response.BAD, "Request contains no data.")
           continue
 
-        file_path = data
+        file_path = os.path.join(FILE_STORAGE_DIR, data)
 
         # verify the path is valid
         if not verify_path(file_path, False, True):
@@ -326,7 +328,7 @@ def handle_client(conn, addr):
 
         # if the request does not contain the expected information
         data = data.split(' | ')
-        if data < 2:
+        if len(data) < 2:
           print(f"{prefix} Subfolder request does not contain the required data")
           send_message(conn, Response.BAD, "Request does not contain the required data.")
           continue
@@ -342,7 +344,7 @@ def handle_client(conn, addr):
             continue
 
           # pull out the information
-          parent_path = data[1]
+          parent_path = os.path.join(FILE_STORAGE_DIR, data[1])
           dir_name = data[2]
 
           # verify the path is valid
@@ -359,7 +361,7 @@ def handle_client(conn, addr):
             send_message(conn, Response.REJECT, f"The subdirectory {full_path} already exists.")
 
           # make the subdirectory
-          os.mkdir(path)
+          os.mkdir(full_path)
           print(f"{prefix} A subdirectory {full_path} was created")
           send_message(conn, Response.OK, f"Subdirectory {full_path} was created.")
           continue
@@ -367,11 +369,11 @@ def handle_client(conn, addr):
           # if the request does not contain the expected information
           if len(data) != 2:
             print(f"{prefix} Subfolder delete request does not contain the required data")
-            send_message(conn, Response.BAD, "Request does not contain the required data (DELETE | file or directory path).")
+            send_message(conn, Response.BAD, "Request does not contain the required data (DELETE | directory path).")
             continue
 
           # pull out the information
-          path = data[1]
+          path = os.path.join(FILE_STORAGE_DIR, data[1])
 
           # verify the path is valid
           if not verify_path(path, True, True):
@@ -380,13 +382,13 @@ def handle_client(conn, addr):
             continue
 
           # if the path is the file storage directory, it cannot be deleted
-          if os.path.samefile(file_path, FILE_STORAGE_DIR):
+          if os.path.samefile(path, FILE_STORAGE_DIR):
             print(f"{prefix} Client tried to delete the file storage directory")
             send_message(conn, Response.FORBID, "You cannot delete the file storage directory.")
             continue
 
           # delete the file
-          os.rmdir()
+          os.rmdir(path)
           print(f"{prefix} A subdirectory {path} was deleted")
           send_message(conn, Response.OK, f"Subdirectory {path} was deleted.")
           continue
@@ -478,6 +480,12 @@ def handle_client(conn, addr):
 def send_message(conn, code, msg=''):
   print(f"Sending: {code.value}@{msg}")
   conn.sendall(f"{code.value}@{msg}".encode(FORMAT))
+
+# wait for the client to send an acknowledgement
+def wait_for_ack(conn):
+  data = None
+  while data != "ACK@":
+    data = conn.recv(SIZE).decode(FORMAT)
 
 
 # check if the given username, password, and session ID are valid
