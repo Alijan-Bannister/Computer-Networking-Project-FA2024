@@ -14,32 +14,40 @@ def main():
     client = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     client.connect(ADDR)
     print(client.recv(SIZE).decode(FORMAT))
+      
     KEY = client.recv(SIZE)
+    ok = "ACK@"
+    client.send(ok.encode(FORMAT))
+    
     SID = client.recv(SIZE)
+    client.send(ok.encode(FORMAT))
+
     while True:  ### multiple communications
         data = input("> ")
-        data = data.split(" ")
-        # data = data[1]
-        cmd = data[0]
-        cmd = cmd.upper()
-        client.send(cmd.encode(FORMAT))
-        print(client.recv(SIZE).decode(FORMAT))
-'''
-        match cmd:
-          case "LOGIN":
-            client.send(cmd.encode(FORMAT))
-            password = input("> ")
-            client.send(rsa.encrypt(password.encode(FORMAT), KEY))
-          case "OK":
-            print(f"{msg}")
-          case "DISCONNECT":
-            print("Disconnected from the server.")
-            client.close() ## close the connection
-          case "TASK":
-            client.send(cmd.encode(FORMAT))
-          case "LOGOUT":
-            client.send(cmd.encode(FORMAT))
-'''
+        cmd = data.upper()
+        # data = data[1])
 
+        match cmd:
+
+          case "DIR":
+            client.send((cmd + '@').encode(FORMAT))
+
+          case "DELETE":
+            filepath = input("File path: ")
+            client.send((cmd + "@" + filepath).encode(FORMAT))
+
+          case "SUBFOLDER":
+            folderOption = input("create/delete?: ")
+            if folderOption.upper() == "CREATE":
+                filePath = input("Parent path: ")
+                dirName = input("New Directory Name: ")
+                client.send((cmd + "@" + folderOption.upper() + " | " + filePath + " | " + dirName).encode(FORMAT))
+            if folderOption.upper() == "DELETE":
+                filePath = input("Path to Delete: ")
+                client.send((cmd + "@" + folderOption.upper() + " | " + filePath).encode(FORMAT))
+          case _:
+            client.send(cmd.encode(FORMAT))
+
+        print(client.recv(SIZE).decode(FORMAT))
 if __name__ == "__main__":
     main()
