@@ -10,10 +10,11 @@ import threading
 # response codes
 class Response(Enum):
   OK = "OK" # request successful
+  ACK = "ACK" # acknowledge
   END = "END" # file transmission is done
   INFO = "INFO" # unsolicited information
-  OVERWRITE = "VERIFY_OVERWRITE" # asks the client to verify that they want a file to be overwritten
-  KEY = "KEY" # contains a public key
+  OVERWRITE = "OVERWRITE" # whether the user wants to overwrite the file
+  KEY = "KEY" # contains a public key/session ID
   BAD = "BAD_REQUEST" # bad syntax
   UNAUTH = "UNAUTHORIZED" # not logged in
   FORBID = "FORBIDDEN" # not allowed (after log in)
@@ -53,8 +54,8 @@ FILE_STORAGE_DIR = os.path.join(PROJECT_DATA_DIR, 'File_Storage')
 PASSWORDS_PATH = os.path.join(PROJECT_DATA_DIR, 'passwords.json')
 
 shutdown = False
+logged_in_users = list()
 files_being_processed = list()
-waiting_overwrites = {}
 
 
 # to handle the clients
@@ -79,8 +80,9 @@ def handle_client(conn, addr):
   cur_user = None
   num_login_attempts = 0
 
-  # remove later!!!!!!!!!!!!
+  # REMOVE LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   cur_user = 'test'
+  logged_in_users.append(cur_user)
 
   while True:
     # if the server is commanded to shutdown, close the connection
@@ -137,9 +139,17 @@ def handle_client(conn, addr):
         # check if the credentials are valid
         valid = validate_login_credentials(session_id, user, enc_data)
 
-        # if the login credentials are valid, log in the user
+        # if the login credentials are valid
         if valid:
+          # if the user is logged in on another device
+          if user in logged_in_users:
+            print(f"{prefix} User {user} tried to login while already being logged in on another device")
+            send_message(conn, Response.REJECT, "You are already logged in on another device.")
+            continue
+
+          # log in the user
           cur_user = user
+          logged_in_users.append(user)
 
           print(f"{prefix} {user} has logged in")
           send_message(conn, Response.OK, "Login successful.")
@@ -161,6 +171,8 @@ def handle_client(conn, addr):
         break
 
       if cmd == "DISCONNECT":
+        send_message(conn, Response.OK, "You have been disconnected.")
+
         # close the connection
         break
 
@@ -175,6 +187,8 @@ def handle_client(conn, addr):
       if cmd == "LOGOUT":
         print(f"{prefix} {cur_user} has been logged out")
 
+        # logout the user
+        logged_in_users.remove(cur_user)
         cur_user = None
         num_login_attempts = 0
 
@@ -233,12 +247,27 @@ def handle_client(conn, addr):
           print(f"{prefix} Uploading {file_path} will overwrite an existing file, asking user to verify")
           send_message(conn, Response.VERIFY, f"Uploading {file_path} will overwrite an existing file.")
 
-          # file processing completed
-          files_being_processed.remove(normal_file_path)
+          # wait for the user to respond to the overwrite verification request
+          response = wait_for_msg(conn, Response.OVERWRITE)
+          response = response[(response.index('@') + 1):]
+          response = int(response) if response.isdigit() else None
 
-          # add the file to the list of files waiting to be overridden
-          waiting_overwrites[addr] = {'path': file_path, 'data': file_data}
-          continue
+          # if the user did not confirm the overwrite
+          if response != 1:
+            # file processing completed
+            files_being_processed.remove(normal_file_path)
+
+            send_message(conn, Response.OK, "Upload canceled.")
+            continue
+
+          # if the file is already being used by another process
+          if files_being_processed.count(normal_file_path) > 1:
+            print(f"{prefix} Client tried to overwrite a file that's being used by another process")
+            send_message(conn, Response.REJECT, f"Unable to overwrite, the specified file is being used by another process")
+
+            # file processing completed
+            files_being_processed.remove(normal_file_path)
+            continue
 
         # create the file
         with open(file_path, 'wb') as file:
@@ -246,6 +275,9 @@ def handle_client(conn, addr):
 
         # file processing completed
         files_being_processed.remove(normal_file_path)
+
+        print(f"{prefix} Client successfully uploaded {file_path}")
+        send_message(conn, Response.OK, "File uploaded successfully.")
         continue
 
       if cmd == "DOWNLOAD":
@@ -359,6 +391,7 @@ def handle_client(conn, addr):
           if os.path.exists(full_path):
             print(f"{prefix} The subdirectory could not be created because it already exists")
             send_message(conn, Response.REJECT, f"The subdirectory {full_path} already exists.")
+            continue
 
           # make the subdirectory
           os.mkdir(full_path)
@@ -387,6 +420,12 @@ def handle_client(conn, addr):
             send_message(conn, Response.FORBID, "You cannot delete the file storage directory.")
             continue
 
+          # if the directory contains files, it cannot be deleted
+          if any(os.scandir(path)):
+            print(f"{prefix} Client tried to delete a subdirectory that contains other files/directories")
+            send_message(conn, Response.REJECT, "The subdirectory could not be deleted because there are files/directories under it.")
+            continue
+
           # delete the file
           os.rmdir(path)
           print(f"{prefix} A subdirectory {path} was deleted")
@@ -398,66 +437,6 @@ def handle_client(conn, addr):
           send_message(conn, Response.BAD, "The subfolder is not recognized.")
           continue
 
-      if cmd == "OVERWRITE":
-        # if there is no data
-        if not data:
-          print(f"{prefix} Message recieved contains no data")
-          send_message(conn, Response.BAD, "Request contains no data.")
-          continue
-
-        if not data.isdigit():
-          print(f"{prefix} Overwrite response not recognized")
-          send_message(conn, Response.BAD, "Overwrite response not recognized.")
-          continue
-
-        if addr not in waiting_overwrites:
-          print(f"{prefix} The user tried to respond to an overwrite request that doesn't exist")
-          send_message(conn, Response.BAD, "There is no pending file overwrite request.")
-          continue
-
-        # get the file path and data from the overwrite list
-        file_path = waiting_overwrites[addr]['path']
-        file_data = waiting_overwrites[addr]['data']
-
-        # verify the file is not currently being used in another process
-        if file_path in files_being_processed:
-          # remove the file data from the overwrite list
-          del waiting_overwrites[addr]
-
-          print(f"{prefix} {file_path} could not be overwritten because it is being used by another process")
-          send_message(conn, Response.REJECT, "The specified file is currently being used by another process.")
-          continue
-
-        match int(data):
-          case 1:
-            # mark the file as being processed
-            normal_file_path = os.path.normpath(file_path)
-            files_being_processed.append(normal_file_path)
-
-            # create the file
-            with open(file_path, 'wb') as file:
-              file.write(file_data)
-
-            # file processing completed
-            files_being_processed.remove(normal_file_path)
-
-            # remove the file data from the overwrite list
-            del waiting_overwrites[addr]
-
-            print(f"{prefix} overwrite accepted for {file_path}")
-            send_message(conn, Response.OK)
-          case 0:
-            # remove the file from the overwrite list
-            del waiting_overwrites[addr]
-
-            print(f"{prefix} overwrite declined for {file_path}")
-            send_message(conn, Response.OK)
-          case _:
-            print(f"{prefix} Overwrite response not recognized")
-            send_message(conn, Response.BAD, "Overwrite response not recognized.")
-
-        continue
-
       # not a valid command
       print(f"{prefix} The user entered an unrecognized command")
       send_message(conn, Response.BAD, "Command not recognized.")
@@ -467,9 +446,8 @@ def handle_client(conn, addr):
       print(f"{prefix} The server encountered an error while processing a client message...")
       send_message(conn, Response.BAD, "Unable to process message.")
 
-  # if there is an overwrite request waiting, cancel it
-  if addr in waiting_overwrites:
-    del waiting_overwrites[addr]
+  # logout the user
+  logged_in_users.remove(cur_user)
 
   # close the connection
   print(f"{prefix} Disconnected")
@@ -481,18 +459,25 @@ def send_message(conn, code, msg=''):
   print(f"Sending: {code.value}@{msg}")
   conn.sendall(f"{code.value}@{msg}".encode(FORMAT))
 
+
 # wait for the client to send an acknowledgement
 def wait_for_ack(conn):
-  data = None
-  while data != "ACK@":
+  return wait_for_msg(conn, Response.ACK)
+
+
+# wait for the client to send a message with the given response code
+def wait_for_msg(conn, code):
+  data = ''
+  while not data.startswith(f"{code.value}@"):
     data = conn.recv(SIZE).decode(FORMAT)
+  return data
 
 
 # check if the given username, password, and session ID are valid
 def validate_login_credentials(session_id_actual, user, enc_data):
   # decrypt the pasword and session ID
   data = rsa.decrypt(enc_data, PRIVATE_KEY).decode(FORMAT)
-  pwd = data[:-SESSION_ID_LENGTH]
+  pwd = data[:-SESSION_ID_LENGTH].encode(FORMAT)
   session_id_received = data[-SESSION_ID_LENGTH:]
 
   # if the session ID does not match, the credentials are not valid
@@ -511,19 +496,14 @@ def validate_login_credentials(session_id_actual, user, enc_data):
   if user not in all_credentials:
     return False
 
-  # get the user's salt and hashed password
-  data = all_credentials[user]
-  hash_actual = data['hash']
-  salt = data['salt']
+  # get the hashed password for the user
+  hash = all_credentials[user].encode(FORMAT)
 
   # clear the credentials out of the memory
   all_credentials.clear()
 
-  # salt and hash the entered password
-  hash_received = bcrypt.hashpw(pwd.encode(FORMAT), salt.encode(FORMAT)).decode(FORMAT)
-
-  # return if the hashes match and therefore the credentials are valid
-  return hash_actual == hash_received
+  # return if the password matches the hashed password and therefore the credentials are valid
+  return bcrypt.checkpw(pwd, hash)
 
 
 # verify that the given path is valid and within the folder structure
@@ -541,6 +521,7 @@ def verify_path(path, is_directory, must_exist):
   path = os.path.normpath(path)
   return path.startswith(FILE_STORAGE_DIR)
 
+
 # returns a string containing the directory structure for the given path
 def get_directory_structure(path, indent_lvl=0):
   structure = ''
@@ -553,6 +534,7 @@ def get_directory_structure(path, indent_lvl=0):
       structure += '|    ' * indent_lvl + f"FILE: {entry.name}\n"
 
   return structure
+
 
 # handle the input from the command line interface
 def handle_cli():
@@ -603,11 +585,10 @@ def handle_cli():
 
       # salt and hash the password
       salt = bcrypt.gensalt()
-      hashed = bcrypt.hashpw(bytes(pwd, FORMAT), salt).decode(FORMAT)
-      salt = salt.decode(FORMAT)
+      hash = bcrypt.hashpw(bytes(pwd, FORMAT), salt).decode(FORMAT)
 
-      # save the username, hashed password, and salt in the passwords file
-      new_login = {user: {'hash': hashed, 'salt': salt}}
+      # save the username and the hashed password in the passwords file
+      new_login = {user: hash}
 
       try:
         with open(PASSWORDS_PATH, 'r') as file:
@@ -634,7 +615,7 @@ def main():
   print("Starting the server")
 
   if not os.path.exists(PROJECT_DATA_DIR):
-    print("Project data directory")
+    print("Created project data directory")
     os.mkdir(PROJECT_DATA_DIR)
 
   if not os.path.exists(FILE_STORAGE_DIR):
