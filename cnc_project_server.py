@@ -1,9 +1,10 @@
 from enum import Enum
+from socket import socket, AF_INET, SOCK_DGRAM, SOCK_STREAM
+import atexit
 import bcrypt
 import json
 import os
 import rsa
-import socket
 import threading
 
 
@@ -23,62 +24,61 @@ class Response(Enum):
 
 
 # get the IP address of the server
-def get_ip():
-  # create a socket and connect to a random address (totally not sketchy)
-  s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-  s.connect(('10.0.0.0', 4500))
+def get_ip() -> str:
+  # create a socket and connect to a random address to get the server IP address (totally not sketchy)
+  with socket(AF_INET, SOCK_DGRAM) as s:
+    s.connect(('10.0.0.0', 4500))
 
-  # get the IP address the server connected to the random address with
-  ip = s.getsockname()[0]
-
-  # close the socket
-  s.close()
+    # get the IP address the server connected to the random address with
+    ip: str = s.getsockname()[0]
 
   return ip
 
 
-IP = get_ip()
-PORT = 4453
-ADDR = (IP, PORT)
-SIZE = 1024
-FORMAT = "utf-8"
+IP: str = get_ip()
+PORT: int = 4453
+ADDR: tuple[str, int] = (IP, PORT)
+SIZE: int = 1024
+FORMAT: str = "utf-8"
 
-DISALLOWED_CHARACTERS = ['@', '|']
-MAX_ALLOWED_LOGIN_ATTEMPTS = 3
-SESSION_ID_LENGTH = 16 # bytes
+DISALLOWED_CHARACTERS: list[str] = ['@', '|']
+MAX_ALLOWED_LOGIN_ATTEMPTS: int = 3
+SESSION_ID_LENGTH: int = 16 # bytes
+WAIT_FOR_MSG_TIMEOUT: int = 10 # seconds
 
 PUBLIC_KEY, PRIVATE_KEY = rsa.newkeys(512)
 
-PROJECT_DATA_DIR = os.path.normpath('CNC_Project_Data')
-FILE_STORAGE_DIR = os.path.join(PROJECT_DATA_DIR, 'File_Storage')
-PASSWORDS_PATH = os.path.join(PROJECT_DATA_DIR, 'passwords.json')
+PROJECT_DATA_DIR: str = os.path.normpath('CNC_Project_Data')
+FILE_STORAGE_DIR: str = os.path.join(PROJECT_DATA_DIR, 'File_Storage')
+PASSWORDS_PATH: str = os.path.join(PROJECT_DATA_DIR, 'passwords.json')
 
-shutdown = False
-logged_in_users = list()
-files_being_processed = list()
+shutdown: bool = False
+all_connections: list[socket] = []
+logged_in_users: list[str] = []
+files_being_processed: list[str] = []
 
 
 # to handle the clients
-def handle_client(conn, addr):
-  prefix = f"[{addr[0]}]:"
+def handle_client(conn: socket, addr: tuple[str, int]) -> None:
+  prefix = f"[{addr[0]}:{addr[1]}]:"
 
   print(f"{prefix} CONNECTED")
   send_message(conn, Response.OK, "Welcome to the server.")
 
   # generates a random session ID
-  session_id = os.urandom(SESSION_ID_LENGTH)
+  session_id: bytes = os.urandom(SESSION_ID_LENGTH)
 
   # send the client the session ID and the public key for password encryption
   conn.sendall(PUBLIC_KEY.save_pkcs1())
   wait_for_ack(conn)
   print(f"{prefix} Client recieved public key")
 
-  conn.sendall(bytes(session_id))
+  conn.sendall(session_id)
   wait_for_ack(conn)
   print(f"{prefix} Client recieved session ID")
 
-  cur_user = None
-  num_login_attempts = 0
+  cur_user: str | None = None
+  num_login_attempts: int = 0
 
   # REMOVE LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   cur_user = 'test'
@@ -91,7 +91,7 @@ def handle_client(conn, addr):
 
     try:
       # receive messages from the client
-      data = conn.recv(SIZE).decode(FORMAT)
+      data: str | None = conn.recv(SIZE).decode(FORMAT)
       print(data)
 
       # if the client closed the connection, close the connection on the server end
@@ -106,9 +106,9 @@ def handle_client(conn, addr):
         continue
 
       # split the command and the data
-      data = data.split('@')
-      cmd = data[0]
-      data = data[1] if len(data) > 1 else None
+      split_data: list[str] = data.split('@')
+      cmd: str = split_data[0]
+      data = split_data[1] if len(split_data) > 1 else None
 
       if cmd == "LOGIN":
         # if there is no data
@@ -126,18 +126,18 @@ def handle_client(conn, addr):
         num_login_attempts += 1
 
         # if the request does not contain the expected information
-        data = data.split(' | ')
-        if len(data) != 2:
+        split_data = data.split(' | ')
+        if len(split_data) != 2:
           print(f"{prefix} Login request does not contain the required data")
           send_message(conn, Response.BAD, "Request does not contain the required data (username | encrypted data).")
           continue
 
         # pull out the information
-        user = data[0]
-        enc_data = data[1]
+        user: str = split_data[0]
+        enc_data: bytes = split_data[1].encode(FORMAT)
 
         # check if the credentials are valid
-        valid = validate_login_credentials(session_id, user, enc_data)
+        valid: bool = validate_login_credentials(session_id, user, enc_data)
 
         # if the login credentials are valid
         if valid:
@@ -203,15 +203,15 @@ def handle_client(conn, addr):
           continue
 
         # if the request does not contain the expected information
-        data = data.split(' | ')
-        if len(data) != 2:
+        split_data = data.split(' | ')
+        if len(split_data) != 2:
           print(f"{prefix} Upload request does not contain the required data")
           send_message(conn, Response.BAD, "Request does not contain the required data (directory path | file name).")
           continue
 
         # pull out the information
-        dir_path = data[0]
-        file_name = data[1]
+        dir_path = split_data[0]
+        file_name = split_data[1]
         file_path = os.path.join(dir_path, file_name)
 
         # mark the file as being processed
@@ -219,7 +219,7 @@ def handle_client(conn, addr):
         files_being_processed.append(normal_file_path)
 
         # verify the path is valid
-        if not verify_path(dir_path, True, False):
+        if not verify_dir_exists(dir_path):
           print(f"{prefix} The file cannot be uploaded because the path \"{dir_path}\" does not exist")
           send_message(conn, Response.NOT_FOUND, "The specified directory does not exist.")
 
@@ -245,15 +245,15 @@ def handle_client(conn, addr):
         # if the file already exists, ask the user to verify that they want to overwrite the file
         if os.path.exists(dir_path):
           print(f"{prefix} Uploading {file_path} will overwrite an existing file, asking user to verify")
-          send_message(conn, Response.VERIFY, f"Uploading {file_path} will overwrite an existing file.")
+          send_message(conn, Response.OVERWRITE, f"Uploading {file_path} will overwrite an existing file.")
 
           # wait for the user to respond to the overwrite verification request
           response = wait_for_msg(conn, Response.OVERWRITE)
-          response = response[(response.index('@') + 1):]
-          response = int(response) if response.isdigit() else None
+          response = response[(response.index('@') + 1):] if response else ''
+          confirmed_overwrite: bool = response == '1'
 
           # if the user did not confirm the overwrite
-          if response != 1:
+          if not confirmed_overwrite:
             # file processing completed
             files_being_processed.remove(normal_file_path)
 
@@ -294,7 +294,7 @@ def handle_client(conn, addr):
         files_being_processed.append(normal_file_path)
 
         # verify the path is valid
-        if not verify_path(file_path, False, True):
+        if not verify_file_exists(file_path):
           print(f"{prefix} {file_path} could not be found")
           send_message(conn, Response.NOT_FOUND, "The specified file could not be found.")
 
@@ -306,7 +306,7 @@ def handle_client(conn, addr):
         with open(file_path, 'rb') as file:
           print(f"{prefix} Sending {file_path}...")
 
-          socket.sendfile(file)
+          conn.sendfile(file)
 
           print(f"{prefix} File transmission for {file_path} complete")
           send_message(conn, Response.END, f"{file_path}")
@@ -325,7 +325,7 @@ def handle_client(conn, addr):
         file_path = os.path.join(FILE_STORAGE_DIR, data)
 
         # verify the path is valid
-        if not verify_path(file_path, False, True):
+        if not verify_file_exists(file_path):
           print(f"{prefix} {file_path} could not be found")
           send_message(conn, Response.NOT_FOUND, "The specified file could not be found.")
           continue
@@ -359,33 +359,33 @@ def handle_client(conn, addr):
           continue
 
         # if the request does not contain the expected information
-        data = data.split(' | ')
-        if len(data) < 2:
+        split_data = data.split(' | ')
+        if len(split_data) < 2:
           print(f"{prefix} Subfolder request does not contain the required data")
           send_message(conn, Response.BAD, "Request does not contain the required data.")
           continue
 
         # pull out the information
-        action = data[0].upper()
+        action = split_data[0].upper()
 
         if action == "CREATE":
           # if the request does not contain the expected information
-          if len(data) != 3:
+          if len(split_data) != 3:
             print(f"{prefix} Subfolder create request does not contain the required data")
             send_message(conn, Response.BAD, "Request does not contain the required data (CREATE | parent path | directory name).")
             continue
 
           # pull out the information
-          parent_path = os.path.join(FILE_STORAGE_DIR, data[1])
-          dir_name = data[2]
+          parent_path = os.path.join(FILE_STORAGE_DIR, split_data[1])
+          dir_name = split_data[2]
+          full_path = os.path.join(parent_path, dir_name)
 
           # verify the path is valid
-          if not verify_path(parent_path, True, False):
+          if not verify_potential_dir_path(full_path):
             print(f"{prefix} The parent folder {parent_path} could not be found")
             send_message(conn, Response.NOT_FOUND, f"The parent folder {parent_path} could not be found.")
             continue
 
-          full_path = os.path.join(parent_path, dir_name)
 
           # if the subdirectory already exists, tell the client the subdirectory can't be created
           if os.path.exists(full_path):
@@ -409,7 +409,7 @@ def handle_client(conn, addr):
           path = os.path.join(FILE_STORAGE_DIR, data[1])
 
           # verify the path is valid
-          if not verify_path(path, True, True):
+          if not verify_dir_exists(path):
             print(f"{prefix} The subdirectory {path} could not be found")
             send_message(conn, Response.NOT_FOUND, f"The subdirectory {path} could not be found.")
             continue
@@ -447,38 +447,52 @@ def handle_client(conn, addr):
       send_message(conn, Response.BAD, "Unable to process message.")
 
   # logout the user
-  logged_in_users.remove(cur_user)
+  if cur_user:
+    logged_in_users.remove(cur_user)
 
   # close the connection
   print(f"{prefix} Disconnected")
+  all_connections.remove(conn)
   conn.close()
 
 
 # send the given message and response code through the client connection
-def send_message(conn, code, msg=''):
+def send_message(conn: socket, code: Response, msg: str='') -> None:
   print(f"Sending: {code.value}@{msg}")
   conn.sendall(f"{code.value}@{msg}".encode(FORMAT))
 
 
 # wait for the client to send an acknowledgement
-def wait_for_ack(conn):
+def wait_for_ack(conn: socket) -> str | None:
   return wait_for_msg(conn, Response.ACK)
 
 
 # wait for the client to send a message with the given response code
-def wait_for_msg(conn, code):
-  data = ''
-  while not data.startswith(f"{code.value}@"):
-    data = conn.recv(SIZE).decode(FORMAT)
+def wait_for_msg(conn: socket, code: Response) -> str | None:
+  # set the connection to timeout after a set number of seconds
+  conn.settimeout(WAIT_FOR_MSG_TIMEOUT)
+
+  try:
+    # wait for the message
+    data = ''
+    while not data.startswith(f"{code.value}@"):
+      data = conn.recv(SIZE).decode(FORMAT)
+  except TimeoutError:
+    print("Client failed to respond and timed out")
+    return None
+  finally:
+    # set the connection to not timeout
+    conn.settimeout(None)
+
   return data
 
 
 # check if the given username, password, and session ID are valid
-def validate_login_credentials(session_id_actual, user, enc_data):
+def validate_login_credentials(session_id_actual: bytes, user: str, enc_data: bytes) -> bool:
   # decrypt the pasword and session ID
   data = rsa.decrypt(enc_data, PRIVATE_KEY).decode(FORMAT)
   pwd = data[:-SESSION_ID_LENGTH].encode(FORMAT)
-  session_id_received = data[-SESSION_ID_LENGTH:]
+  session_id_received = data[-SESSION_ID_LENGTH:].encode(FORMAT)
 
   # if the session ID does not match, the credentials are not valid
   if session_id_actual != session_id_received:
@@ -506,24 +520,32 @@ def validate_login_credentials(session_id_actual, user, enc_data):
   return bcrypt.checkpw(pwd, hash)
 
 
-# verify that the given path is valid and within the folder structure
-def verify_path(path, is_directory, must_exist):
-  # if the path is supposed to exist, but it does not, the path is not valid
-  if must_exist and not os.path.exists(path):
-    return False
+# verify that a file exists at the given file path
+def verify_file_exists(path: str) -> bool:
+  return os.path.exists(path) and os.path.isfile(path) and verify_in_storage_dir(path)
 
-  # if the path is supposed to be for a directory, but it isn't, the path is
-  # not valid
-  if is_directory and not os.path.isdir(path):
-    return False
 
-  # if the path is somewhere in the file storage directory, it is valid
-  path = os.path.normpath(path)
-  return path.startswith(FILE_STORAGE_DIR)
+# verify that a directory exists at the given file path
+def verify_dir_exists(path: str) -> bool:
+  return os.path.exists(path) and os.path.isdir(path) and verify_in_storage_dir(path)
 
+
+# verify that a potential path for a file is valid
+def verify_potential_file_path(path: str) -> bool:
+  return os.path.isfile(path) and verify_in_storage_dir(path) and os.path.exists(os.path.dirname(path))
+
+
+# verify that a potential path for a directory is valid
+def verify_potential_dir_path(path: str) -> bool:
+  return os.path.isdir(path) and verify_in_storage_dir(path) and os.path.exists(os.path.dirname(path))
+
+
+# verify that a path for a file or directory is in the project storage directory
+def verify_in_storage_dir(path: str) -> bool:
+  return os.path.normpath(path).startswith(FILE_STORAGE_DIR)
 
 # returns a string containing the directory structure for the given path
-def get_directory_structure(path, indent_lvl=0):
+def get_directory_structure(path: str, indent_lvl: int=0) -> str:
   structure = ''
 
   for entry in os.scandir(path):
@@ -537,7 +559,7 @@ def get_directory_structure(path, indent_lvl=0):
 
 
 # handle the input from the command line interface
-def handle_cli():
+def handle_cli() -> None:
   prefix = "[CLI]:"
 
   while True:
@@ -611,7 +633,7 @@ def handle_cli():
     print(f"{prefix} Command not recognized")
 
 
-def main():
+def main() -> None:
   print("Starting the server")
 
   if not os.path.exists(PROJECT_DATA_DIR):
@@ -625,7 +647,7 @@ def main():
   thread = threading.Thread(target=handle_cli)
   thread.start()
 
-  server = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # used IPV4 and TCP connection
+  server = socket(AF_INET, SOCK_STREAM) # used IPV4 and TCP connection
   server.bind(ADDR) # bind the address
   server.listen() # start listening
 
@@ -634,18 +656,25 @@ def main():
   try:
     while True:
       conn, addr = server.accept() # accept a connection from a client
+      all_connections.append(conn)
 
       thread = threading.Thread(target=handle_client, args=(conn, addr)) # assigning a thread for each client
       thread.start()
   except:
     print("Server interrupted")
+  finally:
+    print("Shutting down server...")
 
-  print("Shutting down server...")
-  shutdown = True
-  try:
+    shutdown = True
+
+    for conn in all_connections:
+      conn.close()
+
     server.close()
-  except:
-    pass
+
+@atexit.register
+def exit_handler() -> None:
+  print("Server shutdown complete.")
 
 
 if __name__ == "__main__":
