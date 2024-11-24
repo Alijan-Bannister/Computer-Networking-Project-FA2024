@@ -1,11 +1,11 @@
 from enum import Enum
 from socket import socket, AF_INET, SOCK_DGRAM, SOCK_STREAM
+from threading import Thread
 import atexit
 import bcrypt
 import json
 import os
 import rsa
-import threading
 
 
 # response codes
@@ -36,7 +36,7 @@ def get_ip() -> str:
 
 
 IP: str = get_ip()
-PORT: int = 4453
+PORT: int = 4450
 ADDR: tuple[str, int] = (IP, PORT)
 SIZE: int = 1024
 FORMAT: str = "utf-8"
@@ -52,7 +52,7 @@ PROJECT_DATA_DIR: str = os.path.normpath('CNC_Project_Data')
 FILE_STORAGE_DIR: str = os.path.join(PROJECT_DATA_DIR, 'File_Storage')
 PASSWORDS_PATH: str = os.path.join(PROJECT_DATA_DIR, 'passwords.json')
 
-shutdown: bool = False
+server: socket
 all_connections: list[socket] = []
 logged_in_users: list[str] = []
 files_being_processed: list[str] = []
@@ -85,10 +85,6 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
   logged_in_users.append(cur_user)
 
   while True:
-    # if the server is commanded to shutdown, close the connection
-    if shutdown:
-      break
-
     try:
       # receive messages from the client
       data: str | None = conn.recv(SIZE).decode(FORMAT)
@@ -440,6 +436,9 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
       # not a valid command
       print(f"{prefix} The user entered an unrecognized command")
       send_message(conn, Response.BAD, "Command not recognized.")
+    except OSError:
+      print(f"{prefix} The client connection was closed")
+      break
     except Exception as e:
       # display error message
       print(e)
@@ -626,11 +625,30 @@ def handle_cli() -> None:
       continue
 
     if cmd == "SHUTDOWN":
-      print(f"{prefix} Shutting down")
-      shutdown = True
-      break
+      print(f"{prefix} Shutdown called")
+      return
 
     print(f"{prefix} Command not recognized")
+
+
+# accept all incoming connections and handle them on separate threads
+def accept_connections() -> None:
+  global server
+  server = socket(AF_INET, SOCK_STREAM) # uses IPV4 and TCP connection
+  server.bind(ADDR) # bind the address
+  server.listen() # start listening
+
+  print(f"Server is listening on {IP}:{PORT}")
+
+  try:
+    while True:
+      conn, addr = server.accept() # accept a connection from a client
+      all_connections.append(conn)
+
+      thread: Thread = Thread(target=handle_client, args=(conn, addr)) # assigning a thread for each client
+      thread.start()
+  except:
+    print("Server interrupted")
 
 
 def main() -> None:
@@ -644,33 +662,23 @@ def main() -> None:
     print("Created storage directory")
     os.mkdir(FILE_STORAGE_DIR)
 
-  thread = threading.Thread(target=handle_cli)
-  thread.start()
+  cli_thread: Thread = Thread(target=handle_cli)
+  cli_thread.start()
 
-  server = socket(AF_INET, SOCK_STREAM) # used IPV4 and TCP connection
-  server.bind(ADDR) # bind the address
-  server.listen() # start listening
+  accept_connections_thread: Thread = Thread(target=accept_connections)
+  accept_connections_thread.start()
 
-  print(f"Server is listening on {IP}:{PORT}")
+  while cli_thread.is_alive() and accept_connections_thread.is_alive():
+    pass
 
-  try:
-    while True:
-      conn, addr = server.accept() # accept a connection from a client
-      all_connections.append(conn)
+  print("Shutting down server...")
 
-      thread = threading.Thread(target=handle_client, args=(conn, addr)) # assigning a thread for each client
-      thread.start()
-  except:
-    print("Server interrupted")
-  finally:
-    print("Shutting down server...")
+  server.close()
+  for conn in all_connections:
+    conn.close()
 
-    shutdown = True
-
-    for conn in all_connections:
-      conn.close()
-
-    server.close()
+  cli_thread.join(timeout=0)
+  accept_connections_thread.join(timeout=0)
 
 @atexit.register
 def exit_handler() -> None:
