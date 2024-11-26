@@ -6,13 +6,13 @@ import bcrypt
 import json
 import os
 import rsa
+from cryptography.fernet import Fernet
 
 
 # response codes
 class Response(Enum):
   OK = "OK" # request successful
   ACK = "ACK" # acknowledge
-  END = "END" # file transmission is done
   INFO = "INFO" # unsolicited information
   OVERWRITE = "OVERWRITE" # whether the user wants to overwrite the file
   KEY = "KEY" # contains a public key/session ID
@@ -36,7 +36,7 @@ def get_ip() -> str:
 
 
 IP: str = get_ip()
-PORT: int = 4450
+PORT: int = 4452
 ADDR: tuple[str, int] = (IP, PORT)
 SIZE: int = 1024
 FORMAT: str = "utf-8"
@@ -47,6 +47,8 @@ SESSION_ID_LENGTH: int = 16 # bytes
 WAIT_FOR_MSG_TIMEOUT: int = 10 # seconds
 
 PUBLIC_KEY, PRIVATE_KEY = rsa.newkeys(512)
+TEST_KEY: bytes = Fernet.generate_key()
+F = Fernet(TEST_KEY)
 
 PROJECT_DATA_DIR: str = os.path.normpath('CNC_Project_Data')
 FILE_STORAGE_DIR: str = os.path.join(PROJECT_DATA_DIR, 'File_Storage')
@@ -69,7 +71,8 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
   session_id: bytes = os.urandom(SESSION_ID_LENGTH)
 
   # send the client the session ID and the public key for password encryption
-  conn.sendall(PUBLIC_KEY.save_pkcs1())
+  #conn.sendall(PUBLIC_KEY.save_pkcs1())
+  conn.sendall(TEST_KEY)
   wait_for_ack(conn)
   print(f"{prefix} Client recieved public key")
 
@@ -200,15 +203,16 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
 
         # if the request does not contain the expected information
         split_data = data.split(' | ')
-        if len(split_data) != 2:
+        if len(split_data) != 3:
           print(f"{prefix} Upload request does not contain the required data")
           send_message(conn, Response.BAD, "Request does not contain the required data (directory path | file name).")
           continue
 
         # pull out the information
-        dir_path = split_data[0]
+        dir_path = os.path.join(FILE_STORAGE_DIR, split_data[0])
         file_name = split_data[1]
         file_path = os.path.join(dir_path, file_name)
+        file_length: int = int(split_data[2])
 
         # mark the file as being processed
         normal_file_path = os.path.normpath(file_path)
@@ -227,19 +231,17 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         print(f"{prefix} Receiving {file_name}...")
         send_message(conn, Response.OK, f"Send: {dir_path} {file_name}")
 
-        file_data = b''
+        file_data: bytes = b''
         while True:
-          received_data = conn.recv(SIZE)
+          file_data += conn.recv(SIZE)
 
-          if received_data.decode(FORMAT).split('@')[0] == Response.END:
+          if len(file_data) >= file_length:
             print(f"{prefix} {file_name} Received")
             send_message(conn, Response.OK)
             break
 
-          file_data += received_data
-
         # if the file already exists, ask the user to verify that they want to overwrite the file
-        if os.path.exists(dir_path):
+        if os.path.exists(file_path):
           print(f"{prefix} Uploading {file_path} will overwrite an existing file, asking user to verify")
           send_message(conn, Response.OVERWRITE, f"Uploading {file_path} will overwrite an existing file.")
 
@@ -298,14 +300,16 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
           files_being_processed.remove(normal_file_path)
           continue
 
+        # send the client the length of the file
+        file_length = os.path.getsize(normal_file_path)
+        send_message(conn, Response.OK, str(file_length))
+        wait_for_ack(conn)
+
         # send the file to the client
         with open(file_path, 'rb') as file:
           print(f"{prefix} Sending {file_path}...")
 
           conn.sendfile(file)
-
-          print(f"{prefix} File transmission for {file_path} complete")
-          send_message(conn, Response.END, f"{file_path}")
 
         # file processing completed
         files_being_processed.remove(normal_file_path)
@@ -488,10 +492,15 @@ def wait_for_msg(conn: socket, code: Response) -> str | None:
 
 # check if the given username, password, and session ID are valid
 def validate_login_credentials(session_id_actual: bytes, user: str, enc_data: bytes) -> bool:
+  print("Validating...")
   # decrypt the pasword and session ID
-  data = rsa.decrypt(enc_data, PRIVATE_KEY).decode(FORMAT)
+  #data = rsa.decrypt(enc_data, PRIVATE_KEY).decode(FORMAT)
+  data = F.decrypt(enc_data).decode(FORMAT)
+  print("Test 1")
   pwd = data[:-SESSION_ID_LENGTH].encode(FORMAT)
+  print("Test 2")
   session_id_received = data[-SESSION_ID_LENGTH:].encode(FORMAT)
+  print("Test 3")
 
   # if the session ID does not match, the credentials are not valid
   if session_id_actual != session_id_received:
