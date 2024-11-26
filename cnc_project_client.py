@@ -15,12 +15,12 @@ def main():
     client = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
     client.connect(ADDR)
     print(client.recv(SIZE).decode(FORMAT))
-      
+
     KEY = client.recv(SIZE)
     publickey = Fernet(KEY)
     ok = "ACK@"
     client.send(ok.encode(FORMAT))
-    
+
     SID = client.recv(SIZE)
     client.send(ok.encode(FORMAT))
 
@@ -32,12 +32,21 @@ def main():
         match cmd:
             case "UPLOAD":
                 file_path: str = fd.askopenfilename(title="Select a file")
-                print(file_path)
-                with open(file_path, 'rb') as file:
-                    print(f"Sending {file_path}...")
+
                 file_size = os.path.getsize(file_path)
                 directorypath,filename = os.path.split(file_path)
-                client.send((cmd + "@" + directorypath + " | " + filename + str(file_size)).encode(FORMAT))
+
+                desiredDirectory = input("Enter directory to upload to: ")
+                client.send((cmd + "@" + desiredDirectory + " | " + filename + " | " + str(file_size)).encode(FORMAT))
+
+                ack = client.recv(SIZE).decode(FORMAT)
+                if not ack.startswith("OK@"):
+                    continue
+
+                with open(file_path, 'rb') as file:
+                    print(f"Sending {file_path}...")
+                    client.sendfile(file)
+
             case "LOGIN":
                 username = input("Username: ")
                 password = input("password: ")
@@ -68,5 +77,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-    
