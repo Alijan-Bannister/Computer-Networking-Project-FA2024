@@ -1,3 +1,4 @@
+from cryptography.fernet import Fernet
 from enum import Enum
 from socket import socket, AF_INET, SOCK_DGRAM, SOCK_STREAM
 from threading import Thread
@@ -5,8 +6,7 @@ import atexit
 import bcrypt
 import json
 import os
-import rsa
-from cryptography.fernet import Fernet
+#import rsa
 
 
 # response codes
@@ -46,9 +46,9 @@ MAX_ALLOWED_LOGIN_ATTEMPTS: int = 3
 SESSION_ID_LENGTH: int = 16 # bytes
 WAIT_FOR_MSG_TIMEOUT: int = 10 # seconds
 
-PUBLIC_KEY, PRIVATE_KEY = rsa.newkeys(512)
+#PUBLIC_KEY, PRIVATE_KEY = rsa.newkeys(512)
 TEST_KEY: bytes = Fernet.generate_key()
-F = Fernet(TEST_KEY)
+F: Fernet = Fernet(TEST_KEY)
 
 PROJECT_DATA_DIR: str = os.path.normpath('CNC_Project_Data')
 FILE_STORAGE_DIR: str = os.path.join(PROJECT_DATA_DIR, 'File_Storage')
@@ -209,9 +209,9 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
           continue
 
         # pull out the information
-        dir_path = os.path.join(FILE_STORAGE_DIR, split_data[0])
-        file_name = split_data[1]
-        file_path = os.path.join(dir_path, file_name)
+        dir_path: str = os.path.join(FILE_STORAGE_DIR, split_data[0])
+        file_name: str = split_data[1]
+        file_path: str = os.path.join(dir_path, file_name)
         file_length: int = int(split_data[2])
 
         # mark the file as being processed
@@ -236,17 +236,18 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
           file_data += conn.recv(SIZE)
 
           if len(file_data) >= file_length:
-            print(f"{prefix} {file_name} Received")
-            send_message(conn, Response.OK)
             break
 
         # if the file already exists, ask the user to verify that they want to overwrite the file
-        if os.path.exists(file_path):
+        if not os.path.exists(file_path):
+          print(f"{prefix} {file_name} Received")
+          send_message(conn, Response.OK)
+        else:
           print(f"{prefix} Uploading {file_path} will overwrite an existing file, asking user to verify")
           send_message(conn, Response.OVERWRITE, f"Uploading {file_path} will overwrite an existing file.")
 
           # wait for the user to respond to the overwrite verification request
-          response = wait_for_msg(conn, Response.OVERWRITE)
+          response: str | None = wait_for_msg(conn, Response.OVERWRITE, False)
           response = response[(response.index('@') + 1):] if response else ''
           confirmed_overwrite: bool = response == '1'
 
@@ -259,6 +260,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
             continue
 
           # if the file is already being used by another process
+          print(files_being_processed.count(normal_file_path))
           if files_being_processed.count(normal_file_path) > 1:
             print(f"{prefix} Client tried to overwrite a file that's being used by another process")
             send_message(conn, Response.REJECT, f"Unable to overwrite, the specified file is being used by another process")
@@ -345,7 +347,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
 
       if cmd == "DIR":
         # get the formatted directory structure
-        structure = get_directory_structure(FILE_STORAGE_DIR)
+        structure: str = get_directory_structure(FILE_STORAGE_DIR)
 
         print(f"{prefix} Requested directory structure")
         send_message(conn, Response.OK, structure)
@@ -366,7 +368,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
           continue
 
         # pull out the information
-        action = split_data[0].upper()
+        action: str = split_data[0].upper()
 
         if action == "CREATE":
           # if the request does not contain the expected information
@@ -376,9 +378,9 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
             continue
 
           # pull out the information
-          parent_path = os.path.join(FILE_STORAGE_DIR, split_data[1])
-          dir_name = split_data[2]
-          full_path = os.path.join(parent_path, dir_name)
+          parent_path: str = os.path.join(FILE_STORAGE_DIR, split_data[1])
+          dir_name: str = split_data[2]
+          full_path: str = os.path.join(parent_path, dir_name)
 
           # verify the path is valid
           if not verify_potential_dir_path(full_path):
@@ -406,7 +408,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
             continue
 
           # pull out the information
-          path = os.path.join(FILE_STORAGE_DIR, data[1])
+          path: str = os.path.join(FILE_STORAGE_DIR, data[1])
 
           # verify the path is valid
           if not verify_dir_exists(path):
@@ -471,13 +473,14 @@ def wait_for_ack(conn: socket) -> str | None:
 
 
 # wait for the client to send a message with the given response code
-def wait_for_msg(conn: socket, code: Response) -> str | None:
+def wait_for_msg(conn: socket, code: Response, use_timeout: bool = True) -> str | None:
   # set the connection to timeout after a set number of seconds
-  conn.settimeout(WAIT_FOR_MSG_TIMEOUT)
+  if use_timeout:
+    conn.settimeout(WAIT_FOR_MSG_TIMEOUT)
 
   try:
     # wait for the message
-    data = ''
+    data: str = ''
     while not data.startswith(f"{code.value}@"):
       data = conn.recv(SIZE).decode(FORMAT)
   except TimeoutError:
@@ -485,7 +488,8 @@ def wait_for_msg(conn: socket, code: Response) -> str | None:
     return None
   finally:
     # set the connection to not timeout
-    conn.settimeout(None)
+    if use_timeout:
+      conn.settimeout(None)
 
   return data
 
@@ -510,7 +514,7 @@ def validate_login_credentials(session_id_actual: bytes, user: str, enc_data: by
   try:
     with open(PASSWORDS_PATH, 'r') as file:
       # get all the user credentials
-      all_credentials = json.load(file)
+      all_credentials: dict[str, str] = json.load(file)
   except FileNotFoundError:
     return False
 
@@ -519,7 +523,7 @@ def validate_login_credentials(session_id_actual: bytes, user: str, enc_data: by
     return False
 
   # get the hashed password for the user
-  hash = all_credentials[user].encode(FORMAT)
+  hash: bytes = all_credentials[user].encode(FORMAT)
 
   # clear the credentials out of the memory
   all_credentials.clear()
@@ -554,29 +558,29 @@ def verify_in_storage_dir(path: str) -> bool:
 
 # returns a string containing the directory structure for the given path
 def get_directory_structure(path: str, indent_lvl: int=0) -> str:
-  structure = ''
+  structure: str = ''
 
   for entry in os.scandir(path):
     if os.path.isdir(entry):
-      structure += '|    ' * indent_lvl + f"DIR: {entry.name}\n"
+      structure += '    ' * indent_lvl + f"DIR: {entry.name}\n"
       structure += get_directory_structure(entry.path, indent_lvl + 1)
     else:
-      structure += '|    ' * indent_lvl + f"FILE: {entry.name}\n"
+      structure += '    ' * indent_lvl + f"FILE: {entry.name}\n"
 
   return structure
 
 
 # handle the input from the command line interface
 def handle_cli() -> None:
-  prefix = "[CLI]:"
+  prefix: str = "[CLI]:"
 
   while True:
     # get the command input from the CLI
-    cmd = input().upper()
+    cmd: str = input().upper()
 
     if cmd == "ADD LOGIN":
       # get the new username from the CLI
-      user = input(f"{prefix} Enter the new username: ")
+      user: str = input(f"{prefix} Enter the new username: ")
 
       # if no username was entered, the process was canceled
       if not user:
@@ -594,7 +598,7 @@ def handle_cli() -> None:
         pass
 
       # get the new password from the CLI
-      pwd = input(f"{prefix} Enter the new password: ")
+      pwd: str = input(f"{prefix} Enter the new password: ")
 
       # if no password was entered, the process was canceled
       if not pwd:
@@ -602,7 +606,7 @@ def handle_cli() -> None:
         continue
 
       # if the password contains disallowed characters, the process is canceled
-      bad_pwd = False
+      bad_pwd: bool = False
       for c in DISALLOWED_CHARACTERS:
         if c in pwd:
           bad_pwd = True
@@ -614,15 +618,15 @@ def handle_cli() -> None:
         continue
 
       # salt and hash the password
-      salt = bcrypt.gensalt()
-      hash = bcrypt.hashpw(bytes(pwd, FORMAT), salt).decode(FORMAT)
+      salt: bytes = bcrypt.gensalt()
+      hash: str = bcrypt.hashpw(bytes(pwd, FORMAT), salt).decode(FORMAT)
 
       # save the username and the hashed password in the passwords file
-      new_login = {user: hash}
+      new_login: dict[str, str] = {user: hash}
 
       try:
         with open(PASSWORDS_PATH, 'r') as file:
-          pwds = json.load(file)
+          pwds: dict[str, str] = json.load(file)
           pwds.update(new_login)
       except FileNotFoundError:
         pwds = new_login
@@ -642,6 +646,7 @@ def handle_cli() -> None:
 
 # accept all incoming connections and handle them on separate threads
 def accept_connections() -> None:
+  # open a socket and listen for client connections
   global server
   server = socket(AF_INET, SOCK_STREAM) # uses IPV4 and TCP connection
   server.bind(ADDR) # bind the address
@@ -649,11 +654,14 @@ def accept_connections() -> None:
 
   print(f"Server is listening on {IP}:{PORT}")
 
+  # wait for client connections
   try:
     while True:
+      # accept client connection
       conn, addr = server.accept() # accept a connection from a client
       all_connections.append(conn)
 
+      # handle client requests on a separate thread
       thread: Thread = Thread(target=handle_client, args=(conn, addr)) # assigning a thread for each client
       thread.start()
   except:
@@ -663,32 +671,40 @@ def accept_connections() -> None:
 def main() -> None:
   print("Starting the server")
 
+  # if the project data directory does not exists, create it
   if not os.path.exists(PROJECT_DATA_DIR):
     print("Created project data directory")
     os.mkdir(PROJECT_DATA_DIR)
 
+  # if the file storage directory does not exists, create it
   if not os.path.exists(FILE_STORAGE_DIR):
     print("Created storage directory")
     os.mkdir(FILE_STORAGE_DIR)
 
+  # handle the CLI on a separate thread
   cli_thread: Thread = Thread(target=handle_cli)
   cli_thread.start()
 
+  # handle accepting client connections on a separate thread
   accept_connections_thread: Thread = Thread(target=accept_connections)
   accept_connections_thread.start()
 
+  # while the CLI and accept connections threads are still alive, keep the server running
   while cli_thread.is_alive() and accept_connections_thread.is_alive():
     pass
 
   print("Shutting down server...")
 
+  # close the server and client sockets
   server.close()
   for conn in all_connections:
     conn.close()
 
+  # timeout the CLI and accept connections threads
   cli_thread.join(timeout=0)
   accept_connections_thread.join(timeout=0)
 
+# print a message when the program ends
 @atexit.register
 def exit_handler() -> None:
   print("Server shutdown complete.")
