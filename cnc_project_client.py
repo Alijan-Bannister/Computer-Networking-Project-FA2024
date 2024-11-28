@@ -1,10 +1,11 @@
-from cryptography.fernet import Fernet
 from tkinter import filedialog as fd
+import base64
 import os
+import rsa
 import socket
 
 
-IP = "10.180.81.50"
+IP = "10.0.0.209"
 PORT = int(input("Enter port number: "))
 ADDR = (IP,PORT)
 SIZE = 1024 ## byte .. buffer size
@@ -17,8 +18,7 @@ def main():
   client.connect(ADDR)
   print(client.recv(SIZE).decode(FORMAT))
 
-  KEY = client.recv(SIZE)
-  publickey = Fernet(KEY)
+  KEY = rsa.PublicKey.load_pkcs1(client.recv(SIZE))
   ack = "ACK@"
   client.send(ack.encode(FORMAT))
 
@@ -68,9 +68,8 @@ def main():
         username = input("Username: ")
         password = input("Password: ")
         password = password.encode(FORMAT) + SID
-        print(password)
-        password = publickey.encrypt(password)
-        password = password.decode(FORMAT)
+        password = rsa.encrypt(password, KEY)
+        password = base64.b64encode(password).decode(FORMAT)
         cmd = f"LOGIN@{username} | {password}"
         client.sendall(cmd.encode(FORMAT))
       case "DIR":

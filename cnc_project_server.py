@@ -1,12 +1,12 @@
-from cryptography.fernet import Fernet
 from enum import Enum
 from socket import socket, AF_INET, SOCK_DGRAM, SOCK_STREAM
 from threading import Thread
 import atexit
+import base64
 import bcrypt
 import json
 import os
-#import rsa
+import rsa
 
 
 # response codes
@@ -46,9 +46,7 @@ MAX_ALLOWED_LOGIN_ATTEMPTS: int = 3
 SESSION_ID_LENGTH: int = 16 # bytes
 WAIT_FOR_MSG_TIMEOUT: int = 10 # seconds
 
-#PUBLIC_KEY, PRIVATE_KEY = rsa.newkeys(512)
-TEST_KEY: bytes = Fernet.generate_key()
-F: Fernet = Fernet(TEST_KEY)
+PUBLIC_KEY, PRIVATE_KEY = rsa.newkeys(512)
 
 PROJECT_DATA_DIR: str = os.path.normpath('CNC_Project_Data')
 FILE_STORAGE_DIR: str = os.path.join(PROJECT_DATA_DIR, 'File_Storage')
@@ -71,8 +69,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
   session_id: bytes = os.urandom(SESSION_ID_LENGTH)
 
   # send the client the session ID and the public key for password encryption
-  #conn.sendall(PUBLIC_KEY.save_pkcs1())
-  conn.sendall(TEST_KEY)
+  conn.sendall(PUBLIC_KEY.save_pkcs1())
   wait_for_ack(conn)
   print(f"{prefix} Client recieved public key")
 
@@ -82,10 +79,6 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
 
   cur_user: str | None = None
   num_login_attempts: int = 0
-
-  # REMOVE LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  cur_user = 'test'
-  logged_in_users.append(cur_user)
 
   while True:
     try:
@@ -133,7 +126,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
 
         # pull out the information
         user: str = split_data[0]
-        enc_data: bytes = split_data[1].encode(FORMAT)
+        enc_data: str = split_data[1]
 
         # check if the credentials are valid
         valid: bool = validate_login_credentials(session_id, user, enc_data)
@@ -495,16 +488,12 @@ def wait_for_msg(conn: socket, code: Response, use_timeout: bool = True) -> str 
 
 
 # check if the given username, password, and session ID are valid
-def validate_login_credentials(session_id_actual: bytes, user: str, enc_data: bytes) -> bool:
-  print("Validating...")
+def validate_login_credentials(session_id_actual: bytes, user: str, enc_data: str) -> bool:
   # decrypt the pasword and session ID
-  #data = rsa.decrypt(enc_data, PRIVATE_KEY).decode(FORMAT)
-  data = F.decrypt(enc_data).decode(FORMAT)
-  print("Test 1")
-  pwd = data[:-SESSION_ID_LENGTH].encode(FORMAT)
-  print("Test 2")
-  session_id_received = data[-SESSION_ID_LENGTH:].encode(FORMAT)
-  print("Test 3")
+  data = base64.b64decode(enc_data.encode(FORMAT))
+  data = rsa.decrypt(data, PRIVATE_KEY)
+  pwd: bytes = data[:-SESSION_ID_LENGTH]
+  session_id_received: bytes = data[-SESSION_ID_LENGTH:]
 
   # if the session ID does not match, the credentials are not valid
   if session_id_actual != session_id_received:
