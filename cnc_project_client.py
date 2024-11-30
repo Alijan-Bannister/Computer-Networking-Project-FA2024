@@ -9,8 +9,8 @@ import time
 
 IP = "10.180.80.67"
 PORT = int(input("Enter port number: "))
-ADDR = (IP,PORT)
-SIZE = 1024 ## byte .. buffer size
+ADDR = (IP, PORT)
+SIZE = 1024  ## byte .. buffer size
 FORMAT = "utf-8"
 SERVER_DATA_PATH = "server_data"
 
@@ -20,6 +20,7 @@ length_received: float = 0
 def receive_status_msgs(client: socket, length_to_send: int):
   print("receiving msgs")
   global length_received
+  length_received = 0
 
   while length_received < length_to_send:
     length_received = int(client.recv(SIZE).decode(FORMAT).split('@')[1])
@@ -65,7 +66,7 @@ def main():
 
         print(f"Sending {file_path}...")
 
-        global upload_status
+
         upload_status = 0
 
         status_thread: Thread = Thread(target=receive_status_msgs, args=(client, file_size))
@@ -148,3 +149,4 @@ def main():
 
 if __name__ == "__main__":
   main()
+
