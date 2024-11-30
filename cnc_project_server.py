@@ -7,6 +7,7 @@ import bcrypt
 import json
 import os
 import rsa
+import time
 
 
 # response codes
@@ -45,6 +46,7 @@ DISALLOWED_CHARACTERS: list[str] = ['@', '|']
 MAX_ALLOWED_LOGIN_ATTEMPTS: int = 3
 SESSION_ID_LENGTH: int = 16 # bytes
 WAIT_FOR_MSG_TIMEOUT: int = 10 # seconds
+TIME_BETWEEN_STATUS_UPDATES: int = 1 # seconds
 
 PUBLIC_KEY, PRIVATE_KEY = rsa.newkeys(512)
 
@@ -223,15 +225,25 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         # receive the file
         print(f"{prefix} Receiving {file_name}...")
         send_message(conn, Response.OK, f"Send: {dir_path} {file_name}")
+        wait_for_ack(conn)
+
+        last_time: float = time.time()
+        send_message(conn, Response.INFO, '0')
 
         file_data: bytes = b''
         while True:
           print(f'{len(file_data)} / {file_length}: {len(file_data) / file_length * 100:.2f}% Complete...', end='\r')
 
+          if time.time() - last_time >= TIME_BETWEEN_STATUS_UPDATES:
+            send_message(conn, Response.INFO, str(len(file_data)))
+
           file_data += conn.recv(file_length - len(file_data))
 
           if len(file_data) >= file_length:
+            send_message(conn, Response.INFO, str(file_length))
             break
+
+        wait_for_ack(conn)
 
         # if the file already exists, ask the user to verify that they want to overwrite the file
         if not os.path.exists(file_path):

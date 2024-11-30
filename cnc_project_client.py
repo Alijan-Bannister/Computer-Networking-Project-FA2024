@@ -1,8 +1,10 @@
+from socket import socket, AF_INET, SOCK_STREAM
+from threading import Thread
 from tkinter import filedialog as fd
 import base64
 import os
 import rsa
-import socket
+import time
 
 
 IP = "10.180.80.67"
@@ -12,9 +14,22 @@ SIZE = 1024 ## byte .. buffer size
 FORMAT = "utf-8"
 SERVER_DATA_PATH = "server_data"
 
+length_received: float = 0
+
+
+def receive_status_msgs(client: socket, length_to_send: int):
+  print("receiving msgs")
+  global length_received
+
+  while length_received < length_to_send:
+    length_received = int(client.recv(SIZE).decode(FORMAT).split('@')[1])
+    print(f'Upload Status: {length_received} / {length_to_send}: {length_received / length_to_send * 100:.2f}% Complete...')
+
+  client.send("ACK@".encode(FORMAT))
+
 
 def main():
-  client = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+  client = socket(AF_INET, SOCK_STREAM)
   client.connect(ADDR)
   print(client.recv(SIZE).decode(FORMAT))
 
@@ -46,9 +61,21 @@ def main():
         if not response.startswith("OK@"):
           continue
 
+        client.send(ack.encode(FORMAT))
+        
+        print(f"Sending {file_path}...")
+
+        global upload_status
+        upload_status = 0
+
+        status_thread: Thread = Thread(target=receive_status_msgs, args=(client, file_size))
+        status_thread.start()
+        time.sleep(0.5)
+
         with open(file_path, 'rb') as file:
-          print(f"Sending {file_path}...")
           client.sendfile(file)
+
+        status_thread.join()
 
         response = client.recv(SIZE).decode(FORMAT)
         print(response)
