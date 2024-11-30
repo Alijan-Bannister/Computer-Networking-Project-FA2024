@@ -5,7 +5,7 @@ import rsa
 import socket
 
 
-IP = "10.0.0.209"
+IP = "10.180.80.67"
 PORT = int(input("Enter port number: "))
 ADDR = (IP,PORT)
 SIZE = 1024 ## byte .. buffer size
@@ -26,9 +26,7 @@ def main():
   client.send(ack.encode(FORMAT))
 
   while True:  ### multiple communications
-    data = input("> ")
-    cmd = data.upper()
-    # data = data[1])
+    cmd = input("> ").upper()
 
     match cmd:
       case "UPLOAD":

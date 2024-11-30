@@ -36,7 +36,7 @@ def get_ip() -> str:
 
 
 IP: str = get_ip()
-PORT: int = 4452
+PORT: int = 4450
 ADDR: tuple[str, int] = (IP, PORT)
 SIZE: int = 1024
 FORMAT: str = "utf-8"
@@ -226,7 +226,9 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
 
         file_data: bytes = b''
         while True:
-          file_data += conn.recv(SIZE)
+          print(f'{len(file_data)} / {file_length}: {len(file_data) / file_length * 100:.2f}% Complete...', end='\r')
+          
+          file_data += conn.recv(file_length - len(file_data))
 
           if len(file_data) >= file_length:
             break
@@ -490,7 +492,7 @@ def wait_for_msg(conn: socket, code: Response, use_timeout: bool = True) -> str 
 # check if the given username, password, and session ID are valid
 def validate_login_credentials(session_id_actual: bytes, user: str, enc_data: str) -> bool:
   # decrypt the pasword and session ID
-  data = base64.b64decode(enc_data.encode(FORMAT))
+  data: bytes = base64.b64decode(enc_data.encode(FORMAT))
   data = rsa.decrypt(data, PRIVATE_KEY)
   pwd: bytes = data[:-SESSION_ID_LENGTH]
   session_id_received: bytes = data[-SESSION_ID_LENGTH:]
