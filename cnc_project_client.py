@@ -5,7 +5,7 @@ import rsa
 import socket
 
 
-IP = "10.180.80.199"
+IP = "10.180.80.67"
 PORT = int(input("Enter port number: "))
 ADDR = (IP,PORT)
 SIZE = 1024 ## byte .. buffer size
@@ -60,9 +60,7 @@ def main():
             continue
 
           client.send(f"OVERWRITE@{int(overwrite == 'Y')}".encode(FORMAT))
-          response = client.recv(SIZE).decode(FORMAT)
-          print(response)
-
+         # response = client.recv(SIZE).decode(FORMAT)
       case "LOGIN":
         username = input("Username: ")
         password = input("Password: ")
@@ -87,7 +85,33 @@ def main():
           client.send((cmd + "@" + folderOption.upper() + " | " + filePath).encode(FORMAT))
         else:
           print("Invalid Input")
+      case "DOWNLOAD":
+        file_data: bytes = b""
+        path = input("Specify the path of the file you want to download: ")
+        local_path = input("Where fo you want to put the file: ")
+        if os.path.exists(local_path):
+          cmd = f"DOWNLOAD@{path}"
+          client.sendall(cmd.encode(FORMAT))
+          if client.recv(SIZE).decode(FORMAT) == "OK":
+            file_length: int = int(client.recv(SIZE))
+            while True:
+              file_data += client.recv(file_length - len(file_data))
+              if len(file_data) >= file_length:
+                break
+            with open(local_path, "wb") as file:
+              file.write(file_data)
+          else:
+            print("error occured on server end")
+        else:
+          print(f"{local_path} doesn't exist")
+
+
+
     print(client.recv(SIZE).decode(FORMAT))
+
+
+if __name__ == "__main__":
+  main()
 
 
 if __name__ == "__main__":
