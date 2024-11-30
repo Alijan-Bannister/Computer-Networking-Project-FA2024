@@ -297,7 +297,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
           send_message(conn, Response.BAD, "Request contains no data.")
           continue
 
-        file_path = data
+        file_path = os.path.join(FILE_STORAGE_DIR, data)
 
         # mark the file as being processed
         normal_file_path = os.path.normpath(file_path)
