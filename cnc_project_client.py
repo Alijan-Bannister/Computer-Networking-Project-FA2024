@@ -103,13 +103,17 @@ def main():
                     data = data.split("@")
                     if data[0] == "OK":
                         while True:
+                            print(
+                                f'{len(file_data)} / {int(data[1])}: {len(file_data) / int(data[1]) * 100:.2f}% Complete...',
+                                end='\r')
+
                             file_data += client.recv(int(data[1]) - len(file_data))
                             if len(file_data) >= int(data[1]):
                                 break
                         local_path = os.path.join(local_path, name)
                         with open(local_path, "wb") as file:
                             file.write(file_data)
-                        print("File recieved")
+                        print("File received")
                     else:
                         print("error occurred on server end")
                 else:
@@ -119,3 +123,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
