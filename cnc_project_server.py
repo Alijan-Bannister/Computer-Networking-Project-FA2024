@@ -227,7 +227,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         file_data: bytes = b''
         while True:
           print(f'{len(file_data)} / {file_length}: {len(file_data) / file_length * 100:.2f}% Complete...', end='\r')
-          
+
           file_data += conn.recv(file_length - len(file_data))
 
           if len(file_data) >= file_length:
@@ -263,6 +263,9 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
             # file processing completed
             files_being_processed.remove(normal_file_path)
             continue
+
+          # acknowledge overwrite response
+          send_message(conn, Response.OK, f"File being overwritten.")
 
         # create the file
         with open(file_path, 'wb') as file:

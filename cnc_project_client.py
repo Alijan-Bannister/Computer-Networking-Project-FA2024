@@ -5,7 +5,7 @@ import rsa
 import socket
 
 
-IP = "10.180.80.67"
+IP = "10.180.80.199"
 PORT = int(input("Enter port number: "))
 ADDR = (IP,PORT)
 SIZE = 1024 ## byte .. buffer size
@@ -60,7 +60,8 @@ def main():
             continue
 
           client.send(f"OVERWRITE@{int(overwrite == 'Y')}".encode(FORMAT))
-         # response = client.recv(SIZE).decode(FORMAT)
+          response = client.recv(SIZE).decode(FORMAT)
+          print(response)
 
       case "LOGIN":
         username = input("Username: ")
