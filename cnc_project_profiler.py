@@ -1,22 +1,14 @@
 import time
-import pandas as pd
+import csv
 import numpy as np
 
 #the profiler object is meant to profile a single operation, then write its data to a file and delete
 class profiler():
-    int index
-    int start_time
-    int elapsed_time
-    int bytes
-    int data_rates[]
-    int times[]
-
-    #initialize all data to 0 in a new profile
-    def __init__(self)
-        self.index = 0
-        self.start_time = 0
-        self.elapsed_time = 0
-        self.data_rates = np.zeros()
+    start_time = 0
+    elapsed_time = 0
+    bytes = 0
+    data_rates = []
+    times = []
 
     #record the time the file operation starts
     def start_timer():
@@ -25,8 +17,12 @@ class profiler():
     #compute the time the file operation took and compute the data rate
     def stop_timer():
         elapsed_time = start_time - time.time()
-        times[index] = elapsed_time
-        data_rates[index] = bytes/elapsed_time
-        index++
+        times.append(elapsed_time)
+        data_rates.append(bytes/elapsed_time)
 
-    def make_csv
+    def make_csv():
+        csvdata = [times, data_rates]
+
+        with open ('output.csv', mode = 'w', newline = '') as file:
+            writer = csv.writer(file)
+            writer.writerows(csvdata)
