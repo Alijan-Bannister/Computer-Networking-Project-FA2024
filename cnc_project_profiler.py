@@ -11,16 +11,19 @@ class profiler():
     times = []
 
     #record the time the file operation starts
-    def start_timer():
+    def start_timer(self):
         start_time = time.time()
 
-    #compute the time the file operation took and compute the data rate
-    def stop_timer():
+    #compute the time the file operation took and the data rate
+    def stop_timer(self):
         elapsed_time = start_time - time.time()
         times.append(elapsed_time)
         data_rates.append(bytes/elapsed_time)
-
-    def make_csv():
+        
+    def record_bytes(bytes, self)
+    self.bytes = bytes
+    
+    def make_csv(self):
         csvdata = [times, data_rates]
 
         with open ('output.csv', mode = 'w', newline = '') as file:
