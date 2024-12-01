@@ -135,7 +135,7 @@ def main():
             local_path = os.path.join(local_path, name)
             with open(local_path, "wb") as file:
               file.write(file_data)
-            print("File received")
+            print(f"{"File received":100}")
           else:
             print("error occurred on server end")
         else:
