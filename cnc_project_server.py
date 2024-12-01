@@ -1,5 +1,5 @@
 from enum import Enum
-from socket import socket, AF_INET, SOCK_DGRAM, SOCK_STREAM
+from socket import socket as Socket
 from threading import Thread
 import atexit
 import base64
@@ -7,6 +7,7 @@ import bcrypt
 import json
 import os
 import rsa
+import socket
 import time
 
 
@@ -24,10 +25,22 @@ class Response(Enum):
   REJECT = "REJECTED" # the request is recognized and properly formatted but was rejected
 
 
+# command codes
+class Command(Enum):
+  LOGIN = 'LOGIN'
+  LOGOUT = 'LOGOUT'
+  UPLOAD = 'UPLOAD'
+  DOWNLOAD = 'DOWNLOAD'
+  DIR = 'DIR'
+  SUBFOLDER = 'SUBFOLDER'
+  DELETE = 'DELETE'
+  DISCONNECT = 'DISCONNECT'
+
+
 # get the IP address of the server
 def get_ip() -> str:
   # create a socket and connect to a random address to get the server IP address (totally not sketchy)
-  with socket(AF_INET, SOCK_DGRAM) as s:
+  with Socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
     s.connect(('10.0.0.0', 4500))
 
     # get the IP address the server connected to the random address with
@@ -54,14 +67,14 @@ PROJECT_DATA_DIR: str = os.path.normpath('CNC_Project_Data')
 FILE_STORAGE_DIR: str = os.path.join(PROJECT_DATA_DIR, 'File_Storage')
 PASSWORDS_PATH: str = os.path.join(PROJECT_DATA_DIR, 'passwords.json')
 
-server: socket
-all_connections: list[socket] = []
+server: Socket
+all_connections: list[Socket] = []
 logged_in_users: list[str] = []
 files_being_processed: list[str] = []
 
 
 # to handle the clients
-def handle_client(conn: socket, addr: tuple[str, int]) -> None:
+def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
   prefix = f"[{addr[0]}:{addr[1]}]:"
 
   print(f"{prefix} CONNECTED")
@@ -85,7 +98,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
   while True:
     try:
       # receive messages from the client
-      data: str | None = conn.recv(SIZE).decode(FORMAT)
+      data: str | None = recv_msg(conn)
       print(data)
 
       # if the client closed the connection, close the connection on the server end
@@ -101,10 +114,18 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
 
       # split the command and the data
       split_data: list[str] = data.split('@')
-      cmd: str = split_data[0]
+      received_cmd: str = split_data[0]
       data = split_data[1] if len(split_data) > 1 else None
 
-      if cmd == "LOGIN":
+      try:
+        cmd: Command = Command(received_cmd)
+      except ValueError:
+        # not a valid command
+        print(f"{prefix} The user entered an unrecognized command")
+        send_message(conn, Response.BAD, "Command not recognized.")
+        continue
+
+      if cmd == Command.LOGIN:
         # if there is no data
         if not data:
           print(f"{prefix} Message recieved contains no data")
@@ -147,6 +168,8 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
 
           print(f"{prefix} {user} has logged in")
           send_message(conn, Response.OK, "Login successful.")
+
+          prefix = cur_user + ':'
           continue
 
         # the login attempt failed
@@ -164,7 +187,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         send_message(conn, Response.INFO, "Number of allowed login attempts exceeded.")
         break
 
-      if cmd == "DISCONNECT":
+      if cmd == Command.DISCONNECT:
         send_message(conn, Response.OK, "You have been disconnected.")
 
         # close the connection
@@ -178,18 +201,19 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         continue
 
       # user commands
-      if cmd == "LOGOUT":
+      if cmd == Command.LOGOUT:
         print(f"{prefix} {cur_user} has been logged out")
 
         # logout the user
         logged_in_users.remove(cur_user)
         cur_user = None
         num_login_attempts = 0
+        prefix = f"[{addr[0]}:{addr[1]}]:"
 
         send_message(conn, Response.OK, "You have been logged out successfully.")
         continue
 
-      if cmd == "UPLOAD":
+      if cmd == Command.UPLOAD:
         # if there is no data
         if not data:
           print(f"{prefix} Message recieved contains no data")
@@ -254,7 +278,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
           send_message(conn, Response.OVERWRITE, f"Uploading {file_path} will overwrite an existing file.")
 
           # wait for the user to respond to the overwrite verification request
-          response: str | None = wait_for_msg(conn, Response.OVERWRITE, False)
+          response: str | None = wait_for_msg(conn, Response.OVERWRITE, timeout=None)
           response = response[(response.index('@') + 1):] if response else ''
           confirmed_overwrite: bool = response == '1'
 
@@ -290,7 +314,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         send_message(conn, Response.OK, "File uploaded successfully.")
         continue
 
-      if cmd == "DOWNLOAD":
+      if cmd == Command.DOWNLOAD:
         # if there is no data
         if not data:
           print(f"{prefix} Message recieved contains no data")
@@ -327,7 +351,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         files_being_processed.remove(normal_file_path)
         continue
 
-      if cmd == "DELETE":
+      if cmd == Command.DELETE:
         # if there is no data
         if not data:
           print(f"{prefix} Message recieved contains no data")
@@ -355,7 +379,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         send_message(conn, Response.OK)
         continue
 
-      if cmd == "DIR":
+      if cmd == Command.DIR:
         # get the formatted directory structure
         structure: str = get_directory_structure(FILE_STORAGE_DIR)
 
@@ -363,7 +387,7 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
         send_message(conn, Response.OK, structure)
         continue
 
-      if cmd == "SUBFOLDER":
+      if cmd == Command.SUBFOLDER:
         # if there is no data
         if not data:
           print(f"{prefix} Message recieved contains no data")
@@ -472,36 +496,57 @@ def handle_client(conn: socket, addr: tuple[str, int]) -> None:
 
 
 # send the given message and response code through the client connection
-def send_message(conn: socket, code: Response, msg: str='') -> None:
-  print(f"Sending: {code.value}@{msg}")
-  conn.sendall(f"{code.value}@{msg}".encode(FORMAT))
+def send_message(conn: Socket, code: Response, *msg: str) -> None:
+  message: str = f'{code.value}@{' | '.join(msg)}'
+  print(f"--Sending: {message}")
+  conn.sendall(message.encode(FORMAT))
+
+
+# receive a message from the given client connection
+def recv_msg(conn: Socket, size: int=SIZE) -> str:
+  return conn.recv(size).decode(FORMAT)
+
+
+# return the code and actual message extracted from the message
+def get_code_and_msg(msg: str) -> tuple[Response, str]:
+  parts: list[str] = msg.split('@')
+  return (Response(parts[0]), parts[1] if len(parts) == 2 else '')
+
+
+# return the actual message in the message (without the response code)
+def get_msg(msg: str) -> str:
+  return msg.split('@')[1]
+
+
+# check if the given message starts with the given response code
+def check_response_code(msg: str, code: Response) -> bool:
+  return msg.startswith(code.value + '@')
 
 
 # wait for the client to send an acknowledgement
-def wait_for_ack(conn: socket) -> str | None:
+def wait_for_ack(conn: Socket) -> str | None:
   return wait_for_msg(conn, Response.ACK)
 
 
 # wait for the client to send a message with the given response code
-def wait_for_msg(conn: socket, code: Response, use_timeout: bool = True) -> str | None:
+def wait_for_msg(conn: Socket, code: Response, *, timeout: int | None=WAIT_FOR_MSG_TIMEOUT) -> str | None:
   # set the connection to timeout after a set number of seconds
-  if use_timeout:
-    conn.settimeout(WAIT_FOR_MSG_TIMEOUT)
+  conn.settimeout(timeout)
 
   try:
     # wait for the message
     data: str = ''
-    while not data.startswith(f"{code.value}@"):
-      data = conn.recv(SIZE).decode(FORMAT)
+
+    while not check_response_code(data, code):
+      data = recv_msg(conn)
+
+    return data
   except TimeoutError:
     print("Client failed to respond and timed out")
     return None
   finally:
     # set the connection to not timeout
-    if use_timeout:
-      conn.settimeout(None)
-
-  return data
+    conn.settimeout(None)
 
 
 # check if the given username, password, and session ID are valid
@@ -654,7 +699,7 @@ def handle_cli() -> None:
 def accept_connections() -> None:
   # open a socket and listen for client connections
   global server
-  server = socket(AF_INET, SOCK_STREAM) # uses IPV4 and TCP connection
+  server = Socket(socket.AF_INET, socket.SOCK_STREAM) # uses IPV4 and TCP connection
   server.bind(ADDR) # bind the address
   server.listen() # start listening
 
