@@ -33,13 +33,14 @@ class Command(Enum):
   SUBFOLDER = 'SUBFOLDER'
   DELETE = 'DELETE'
   DISCONNECT = 'DISCONNECT'
+  HELP = 'HELP'
 
 
-IP = input('Enter the server IP address: ')
-PORT = int(input('Enter server port number: '))
-ADDR = (IP, PORT)
-SIZE = 1024  # bytes
-FORMAT = "utf-8"
+IP: str = input('\nEnter the server IP address: ')
+PORT: int = int(input('Enter server port number: '))
+ADDR: tuple[str, int] = (IP, PORT)
+SIZE: int = 1024  # bytes
+FORMAT: str = "utf-8"
 
 
 # recieve upload status messages from the server
@@ -108,10 +109,16 @@ def main() -> None:
   session_id: bytes = conn.recv(SIZE)
   send_message(conn, Response.ACK)
 
+  # whether the user is currently logged in
+  logged_in: bool = False
+
+  # print initial help message
+  print("\nEnter 'HELP' for a list of commands.", end='')
+
   # accept user commands
   while True:
     # get the command the user wants to enter
-    entered_cmd: str = input("Enter a command: ").upper()
+    entered_cmd: str = input("\nEnter a command: ").upper()
 
     # check if the command the user entered is valid
     try:
@@ -123,11 +130,17 @@ def main() -> None:
     # execute the functionality for the command the user entered
     match cmd:
       case Command.UPLOAD:
+        # if the user is not logged in, they cannot run this command
+        if not logged_in:
+          print('You are not logged into the server')
+          continue
+
         # ask the user to select a file to upload to the server
-        try:
-          file_path: str = fd.askopenfilename(title="Select a file to upload")
-        except FileNotFoundError:
-          print("Upload canceled")
+        file_path: str = fd.askopenfilename(title="Select a file to upload")
+
+        # if the user didn't select a file
+        if not file_path:
+          print('Upload canceled')
           continue
 
         # get the name and file size of the file the user selected
@@ -183,6 +196,11 @@ def main() -> None:
           print(recv_msg(conn))
           print(recv_msg(conn))
       case Command.LOGIN:
+        # if the user is already logged in, they cannot run this command
+        if logged_in:
+          print('You are already logged into the server')
+          continue
+
         # get the username and password from the user
         user: str = input("Username: ")
         pwd: str = input("Password: ")
@@ -195,8 +213,20 @@ def main() -> None:
         # send the user's credentials to the server
         send_message(conn, Command.LOGIN, user, encoded_data)
 
-        print(recv_msg(conn))
+        response = recv_msg(conn)
+
+        if check_response_code(response, Response.OK):
+          print('You have been logged in successfully')
+          logged_in = True
+          continue
+
+        print('Login Failed: Invalid username and/or password.')
       case Command.LOGOUT:
+        # if the user is not logged in, they cannot run this command
+        if not logged_in:
+          print('You are not logged into the server')
+          continue
+
         # request the server to logout the user
         send_message(conn, Command.LOGOUT)
 
@@ -209,8 +239,8 @@ def main() -> None:
           continue
 
         # the user has been logged out successfully
+        logged_in = False
         print('You have been logged out successfully')
-        break
       case Command.DISCONNECT:
         # send the disconnect request to the server
         send_message(conn, Command.DISCONNECT)
@@ -218,12 +248,22 @@ def main() -> None:
         # disconnect
         break
       case Command.DIR:
+        # if the user is not logged in, they cannot run this command
+        if not logged_in:
+          print('You are not logged into the server')
+          continue
+
         # ask the server for the file storage directory structure
         send_message(conn, Command.DIR)
 
         # receive the directory structure and display it to the user
         print(recv_msg(conn))
       case Command.DELETE:
+        # if the user is not logged in, they cannot run this command
+        if not logged_in:
+          print('You are not logged into the server')
+          continue
+
         # ask the user to enter the path of the file to be deleted
         file_path = input("File path: ")
 
@@ -233,6 +273,11 @@ def main() -> None:
         # display to the user whether the deletion was successful
         print(recv_msg(conn))
       case Command.SUBFOLDER:
+        # if the user is not logged in, they cannot run this command
+        if not logged_in:
+          print('You are not logged into the server')
+          continue
+
         # ask the user for the subfolder action they wish to execute
         action: str = input('Create/Delete?: ').upper()
 
@@ -261,13 +306,19 @@ def main() -> None:
         print('Invalid subfolder action')
         continue
       case Command.DOWNLOAD:
+        # if the user is not logged in, they cannot run this command
+        if not logged_in:
+          print('You are not logged into the server')
+          continue
+
         # ask the user to enter the path of the file they wish to download
         file_path = input('Specify the path of the file you want to download: ')
 
         # ask the user to select the location for the downloaded file to be saved to locally
-        try:
-          local_path: str = fd.askdirectory(title='Select a location to save the file')
-        except FileNotFoundError:
+        local_path: str = fd.askdirectory(title='Select a location to save the file')
+
+        # if the user did not select a directory
+        if not local_path:
           print('Download canceled')
           continue
 
@@ -316,6 +367,20 @@ def main() -> None:
           file.write(file_data)
 
         print('File saved')
+      case Command.HELP:
+        # print all the commands the user can enter
+        space: int = 12
+        print('',
+              f'{'LOGIN':{space}}- Login to the server',
+              f'{'LOGOUT':{space}}- Logout of the server',
+              f'{'DISCONNECT':{space}}- Disconnect from the server',
+              f'{'UPLOAD':{space}}- Upload a file to the server',
+              f'{'DOWNLOAD':{space}}- Download a file from the server',
+              f"{'DIR':{space}}- Display the server's file directory",
+              f'{'DELETE':{space}}- Delete a file from the server',
+              f'{'SUBFOLDER':{space}}- Create or delete a subfolder from the server',
+              sep='\n'
+              )
 
   # client disconnected from the server
   print('Disconnected from the server')
