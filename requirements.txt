@@ -1,0 +1,3 @@
+numpy==2.1.3
+python_bcrypt==0.3.2
+rsa==4.9
