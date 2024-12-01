@@ -18,7 +18,6 @@ length_received: float = 0
 
 
 def receive_status_msgs(client: socket, length_to_send: int):
-  print("receiving msgs")
   global length_received
   length_received = 0
 
@@ -65,9 +64,6 @@ def main():
         client.send(ack.encode(FORMAT))
 
         print(f"Sending {file_path}...")
-
-
-        upload_status = 0
 
         status_thread: Thread = Thread(target=receive_status_msgs, args=(client, file_size))
         status_thread.start()
@@ -131,7 +127,7 @@ def main():
           data = data.split("@")
           if data[0] == "OK":
             while True:
-              #print(f'{len(file_data)} / {int(data[1])}: {len(file_data) / int(data[1]) * 100:.2f}% Complete...', end='\r')
+              print(f'{len(file_data)} / {int(data[1])}: {len(file_data) / int(data[1]) * 100:.2f}% Complete...', end='\r')
               file_data += client.recv(int(data[1]) - len(file_data))
               if len(file_data) >= int(data[1]):
                 break
