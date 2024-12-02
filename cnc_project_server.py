@@ -708,6 +708,7 @@ def accept_connections() -> None:
   global server
   server = Socket(socket.AF_INET, socket.SOCK_STREAM) # uses IPV4 and TCP connection
 
+  # try binding on different ports until an open one is found
   global ADDR, PORT
   while True:
     try:
@@ -715,6 +716,7 @@ def accept_connections() -> None:
     except OSError:
       print(f'Unable to bind to port {PORT}')
 
+      # go to the next port
       PORT += 1
       ADDR = (IP, PORT)
       continue

@@ -99,6 +99,7 @@ def main() -> None:
   while True:
     IP: str = input('Enter the server IP address: ')
 
+    # if the user input is a valid IP address, move on
     if re.search(IP_REGEX, IP):
       break
 
@@ -108,23 +109,26 @@ def main() -> None:
   global PORT
   ADDR: tuple[str, int] = (IP, PORT)
 
-  # connect to the server
   connection_attempts: int = 0
   print()
 
+  # attempt connecting to the server on different ports until the port the server is on is found
   while True:
     connection_attempts += 1
 
     try:
+      # connect to the server
       conn: Socket = Socket(socket.AF_INET, socket.SOCK_STREAM)
       conn.connect(ADDR)
     except OSError:
       print(f'Could not connect to the server on port {PORT}')
 
+      # if the number of connection attempts has been exceeded, the server could not be found
       if connection_attempts >= MAX_CONNECTION_REQUESTS:
         print(f"Server could not be found")
         return
 
+      # go to the next port
       PORT += 1
       ADDR = (IP, PORT)
       continue
