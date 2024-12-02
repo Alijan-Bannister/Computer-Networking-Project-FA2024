@@ -7,6 +7,7 @@ import os
 import rsa
 import socket
 import time
+import re
 
 
 # response codes
@@ -36,9 +37,6 @@ class Command(Enum):
   HELP = 'HELP'
 
 
-IP: str = input('\nEnter the server IP address: ')
-PORT: int = int(input('Enter server port number: '))
-ADDR: tuple[str, int] = (IP, PORT)
 SIZE: int = 1024  # bytes
 FORMAT: str = "utf-8"
 
@@ -87,9 +85,45 @@ def recv_msg(conn: Socket, size: int=SIZE) -> str:
 
 
 def main() -> None:
+  IP_REGEX: re.Pattern = re.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$')
+  PORT_REGEX: re.Pattern = re.compile(r'^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$')
+
+  print()
+
+  # get the server IP address from the user
+  while True:
+    IP: str = input('Enter the server IP address: ')
+
+    if re.search(IP_REGEX, IP):
+      break
+
+    print('Invalid IP address, try again...')
+
+  # get the server port from the user
+  while True:
+    try:
+      PORT: int = int(input('Enter server port number: '))
+    except ValueError:
+      print('The port must be an integer')
+      continue
+
+    if re.search(PORT_REGEX, str(PORT)):
+      break
+
+    print('Invalid port, try again...')
+
+  # server address
+  ADDR: tuple[str, int] = (IP, PORT)
+
+  print(f'\nConnecting to server at {IP}:{PORT}...')
+
   # connect to the server
   conn: Socket = Socket(socket.AF_INET, socket.SOCK_STREAM)
-  conn.connect(ADDR)
+  try:
+    conn.connect(ADDR)
+  except ConnectionRefusedError:
+    print(f"Server could not be found")
+    return
 
   # receive the welcome message
   msg: str = recv_msg(conn)
@@ -180,21 +214,24 @@ def main() -> None:
         response = conn.recv(SIZE).decode(FORMAT)
         print(response)
 
-        # if the file would be overwritten if uploaded to the server
-        if check_response_code(response, Response.OVERWRITE):
-          # ask the user to confirm whether they want to overwrite the file
-          overwrite: str = input("The uploaded file already exists, would you like to overwrite the file? (Y/N): ").upper()
-
-          # if the user did not enter yes or no, the response isn't recognized
-          if overwrite != 'Y' and overwrite != 'N':
-            print("Response not recognized")
-            continue
-
-          # send whether the user wants to overwrite the message to the server
-          send_message(conn, Response.OVERWRITE, str(int(overwrite == 'Y')))
-
+        # if the file doesn't need to be overwritten
+        if not check_response_code(response, Response.OVERWRITE):
           print(recv_msg(conn))
-          print(recv_msg(conn))
+          continue
+
+        # ask the user to confirm whether they want to overwrite the file
+        overwrite: str = input("The uploaded file already exists, would you like to overwrite the file? (Y/N): ").upper()
+
+        # if the user did not enter yes or no, the response isn't recognized
+        if overwrite != 'Y' and overwrite != 'N':
+          print("Response not recognized")
+          continue
+
+        # send whether the user wants to overwrite the message to the server
+        send_message(conn, Response.OVERWRITE, str(int(overwrite == 'Y')))
+
+        print(recv_msg(conn))
+        print(recv_msg(conn))
       case Command.LOGIN:
         # if the user is already logged in, they cannot run this command
         if logged_in:
@@ -325,14 +362,18 @@ def main() -> None:
         # send the download request to the server
         send_message(conn, Command.DOWNLOAD, file_path)
 
-        # if the sever did denied the request, download canceled
-        if not check_response_code(recv_msg(conn), Response.OK):
+        # get the server's response
+        response = recv_msg(conn)
+
+        # if the sever denied the request, download canceled
+        response
+        if not check_response_code(response, Response.OK):
           continue
 
         send_message(conn, Response.ACK)
 
         # get the response code and actual message
-        code, msg = get_code_and_msg(recv_msg(conn))
+        code, msg = get_code_and_msg(response)
 
         # if the server encounter an issue
         if code != Response.OK:
@@ -347,15 +388,15 @@ def main() -> None:
 
         # receive the file from the server
         while True:
+          # if all the file data has been received, stop waiting for more data
+          if len(file_data) >= file_length:
+            break
+
           # status message
           print(f'{len(file_data)} / {file_length}: {len(file_data) / file_length * 100:.2f}% Complete...', end='\r')
 
           # receive data from the buffer
           file_data += conn.recv(file_length - len(file_data))
-
-          # if all the file data has been received, stop waiting for more data
-          if len(file_data) >= file_length:
-            break
 
         print(f"{"File received":100}")
 
