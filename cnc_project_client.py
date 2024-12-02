@@ -37,11 +37,12 @@ class Command(Enum):
   HELP = 'HELP'
 
 
+PORT = 4450
 SIZE: int = 1024  # bytes
 FORMAT: str = "utf-8"
 
 IP_REGEX: re.Pattern = re.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$')
-PORT_REGEX: re.Pattern = re.compile(r'^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$')
+MAX_CONNECTION_REQUESTS: int = 50
 
 
 # recieve upload status messages from the server
@@ -103,31 +104,33 @@ def main() -> None:
 
     print('Invalid IP address, try again...')
 
-  # get the server port from the user
-  while True:
-    try:
-      PORT: int = int(input('Enter server port number: '))
-    except ValueError:
-      print('The port must be an integer')
-      continue
-
-    if re.search(PORT_REGEX, str(PORT)):
-      break
-
-    print('Invalid port, try again...')
-
   # server address
+  global PORT
   ADDR: tuple[str, int] = (IP, PORT)
 
-  print(f'\nConnecting to server at {IP}:{PORT}...')
-
   # connect to the server
-  conn: Socket = Socket(socket.AF_INET, socket.SOCK_STREAM)
-  try:
-    conn.connect(ADDR)
-  except ConnectionRefusedError:
-    print(f"Server could not be found")
-    return
+  connection_attempts: int = 0
+  print()
+
+  while True:
+    connection_attempts += 1
+
+    try:
+      conn: Socket = Socket(socket.AF_INET, socket.SOCK_STREAM)
+      conn.connect(ADDR)
+    except OSError:
+      print(f'Could not connect to the server on port {PORT}')
+
+      if connection_attempts >= MAX_CONNECTION_REQUESTS:
+        print(f"Server could not be found")
+        return
+
+      PORT += 1
+      ADDR = (IP, PORT)
+      continue
+    break
+
+  print(f'Connecting to server at {IP}:{PORT}...')
 
   # receive the welcome message
   msg: str = recv_msg(conn)
