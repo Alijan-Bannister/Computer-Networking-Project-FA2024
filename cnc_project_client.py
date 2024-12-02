@@ -4,10 +4,10 @@ from threading import Thread
 from tkinter import filedialog as fd
 import base64
 import os
+import re
 import rsa
 import socket
 import time
-import re
 
 
 # response codes
@@ -40,15 +40,22 @@ class Command(Enum):
 SIZE: int = 1024  # bytes
 FORMAT: str = "utf-8"
 
+IP_REGEX: re.Pattern = re.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$')
+PORT_REGEX: re.Pattern = re.compile(r'^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$')
+
 
 # recieve upload status messages from the server
 def receive_status_msgs(conn: Socket, length_to_send: int):
   length_received: int = 0
 
   # receive updates while the server still hasn't received all the data
-  while length_received < length_to_send:
+  while True:
     # receive a status update on the upload from the server
     length_received = int(get_msg(recv_msg(conn)))
+
+    # if the server has received all the data, stop waiting for status updates
+    if length_received >= length_to_send:
+      break
 
     # display the upload status
     print(f'Upload Status: {length_received} / {length_to_send}: {length_received / length_to_send * 100:.2f}% Complete...', end='\r')
@@ -76,7 +83,7 @@ def get_code_and_msg(msg: str) -> tuple[Response, str]:
 
 # return the actual message in the message (without the response code)
 def get_msg(msg: str) -> str:
-  return msg.split('@')[1]
+  return get_code_and_msg(msg)[1]
 
 
 # receive a string message from the server
@@ -85,9 +92,6 @@ def recv_msg(conn: Socket, size: int=SIZE) -> str:
 
 
 def main() -> None:
-  IP_REGEX: re.Pattern = re.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$')
-  PORT_REGEX: re.Pattern = re.compile(r'^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$')
-
   print()
 
   # get the server IP address from the user
@@ -201,7 +205,7 @@ def main() -> None:
         # start a thread which will receive and print out status messages from the server regarding the file upload
         status_thread: Thread = Thread(target=receive_status_msgs, args=(conn, file_size))
         status_thread.start()
-        time.sleep(0.5)
+        time.sleep(0.1)
 
         # send the file
         with open(file_path, 'rb') as file:

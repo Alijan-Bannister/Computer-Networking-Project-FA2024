@@ -50,7 +50,7 @@ def get_ip() -> str:
 
 
 IP: str = get_ip()
-PORT: int = 4450
+PORT: int = 4451
 ADDR: tuple[str, int] = (IP, PORT)
 SIZE: int = 1024
 FORMAT: str = "utf-8"
@@ -59,7 +59,7 @@ DISALLOWED_CHARACTERS: list[str] = ['@', '|']
 MAX_ALLOWED_LOGIN_ATTEMPTS: int = 3
 SESSION_ID_LENGTH: int = 16 # bytes
 WAIT_FOR_MSG_TIMEOUT: int = 10 # seconds
-TIME_BETWEEN_STATUS_UPDATES: int = 1 # seconds
+TIME_BETWEEN_STATUS_UPDATES: float = 0.5 # seconds
 
 PUBLIC_KEY, PRIVATE_KEY = rsa.newkeys(512)
 
@@ -251,21 +251,21 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
         send_message(conn, Response.OK, f"Send: {dir_path} {file_name}")
         wait_for_ack(conn)
 
-        last_time: float = time.time()
-        send_message(conn, Response.INFO, '0')
-
+        last_time: float = time.time() + TIME_BETWEEN_STATUS_UPDATES
         file_data: bytes = b''
+
         while True:
+          if len(file_data) >= file_length:
+            send_message(conn, Response.INFO, str(file_length))
+            break
+
           print(f'{len(file_data)} / {file_length}: {len(file_data) / file_length * 100:.2f}% Complete...', end='\r')
 
           if time.time() - last_time >= TIME_BETWEEN_STATUS_UPDATES:
             send_message(conn, Response.INFO, str(len(file_data)))
+            last_time = time.time()
 
           file_data += conn.recv(file_length - len(file_data))
-
-          if len(file_data) >= file_length:
-            send_message(conn, Response.INFO, str(file_length))
-            break
 
         wait_for_ack(conn)
 
@@ -479,6 +479,9 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
     except OSError:
       print(f"{prefix} The client connection was closed")
       break
+    except TimeoutError as e:
+      print()
+      send_message(conn, Response.REJECT, e.args[0])
     except Exception as e:
       # display error message
       print(e)
@@ -524,12 +527,12 @@ def check_response_code(msg: str, code: Response) -> bool:
 
 
 # wait for the client to send an acknowledgement
-def wait_for_ack(conn: Socket) -> str | None:
+def wait_for_ack(conn: Socket) -> str:
   return wait_for_msg(conn, Response.ACK)
 
 
 # wait for the client to send a message with the given response code
-def wait_for_msg(conn: Socket, code: Response, *, timeout: int | None=WAIT_FOR_MSG_TIMEOUT) -> str | None:
+def wait_for_msg(conn: Socket, code: Response, *, timeout: int | None=WAIT_FOR_MSG_TIMEOUT) -> str:
   # set the connection to timeout after a set number of seconds
   conn.settimeout(timeout)
 
@@ -543,7 +546,7 @@ def wait_for_msg(conn: Socket, code: Response, *, timeout: int | None=WAIT_FOR_M
     return data
   except TimeoutError:
     print("Client failed to respond and timed out")
-    return None
+    raise TimeoutError('Did not receive acknowledgement from the client')
   finally:
     # set the connection to not timeout
     conn.settimeout(None)
