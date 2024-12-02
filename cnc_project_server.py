@@ -50,7 +50,7 @@ def get_ip() -> str:
 
 
 IP: str = get_ip()
-PORT: int = 4451
+PORT: int = 4450
 ADDR: tuple[str, int] = (IP, PORT)
 SIZE: int = 1024
 FORMAT: str = "utf-8"
@@ -476,12 +476,13 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
       # not a valid command
       print(f"{prefix} The user entered an unrecognized command")
       send_message(conn, Response.BAD, "Command not recognized.")
-    except OSError:
-      print(f"{prefix} The client connection was closed")
-      break
     except TimeoutError as e:
       print()
       send_message(conn, Response.REJECT, e.args[0])
+      break
+    except OSError:
+      print(f"{prefix} The client connection was closed")
+      break
     except Exception as e:
       # display error message
       print(e)
@@ -703,7 +704,19 @@ def accept_connections() -> None:
   # open a socket and listen for client connections
   global server
   server = Socket(socket.AF_INET, socket.SOCK_STREAM) # uses IPV4 and TCP connection
-  server.bind(ADDR) # bind the address
+
+  global ADDR, PORT
+  while True:
+    try:
+      server.bind(ADDR) # bind the address
+    except OSError:
+      print(f'Unable to bind to port {PORT}')
+
+      PORT += 1
+      ADDR = (IP, PORT)
+      continue
+    break
+
   server.listen() # start listening
 
   print(f"Server is listening on {IP}:{PORT}")
