@@ -412,12 +412,15 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
             continue
 
           # pull out the information
-          parent_path: str = os.path.join(FILE_STORAGE_DIR, split_data[1])
+          parent_path: str = os.path.normpath(os.path.join(FILE_STORAGE_DIR, split_data[1]) if split_data[1] else FILE_STORAGE_DIR)
           dir_name: str = split_data[2]
           full_path: str = os.path.join(parent_path, dir_name)
+          print(f'Parent path: {parent_path}')
+          print(f'Directory name: {dir_name}')
+          print(f'Full path: {full_path}')
 
           # verify the path is valid
-          if not verify_potential_dir_path(full_path):
+          if not verify_potential_dir_path(parent_path):
             print(f"{prefix} The parent folder {parent_path} could not be found")
             send_message(conn, Response.NOT_FOUND, f"The parent folder {parent_path} could not be found.")
             continue
@@ -436,13 +439,13 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
           continue
         elif action == "DELETE":
           # if the request does not contain the expected information
-          if len(data) != 2:
+          if len(split_data) != 2:
             print(f"{prefix} Subfolder delete request does not contain the required data")
             send_message(conn, Response.BAD, "Request does not contain the required data (DELETE | directory path).")
             continue
 
           # pull out the information
-          path: str = os.path.join(FILE_STORAGE_DIR, data[1])
+          path: str = os.path.join(FILE_STORAGE_DIR, split_data[1])
 
           # verify the path is valid
           if not verify_dir_exists(path):
@@ -604,7 +607,7 @@ def verify_potential_file_path(path: str) -> bool:
 
 # verify that a potential path for a directory is valid
 def verify_potential_dir_path(path: str) -> bool:
-  return os.path.isdir(path) and verify_in_storage_dir(path) and os.path.exists(os.path.dirname(path))
+  return os.path.isdir(path) and verify_in_storage_dir(path) and os.path.exists(path)
 
 
 # verify that a path for a file or directory is in the project storage directory
