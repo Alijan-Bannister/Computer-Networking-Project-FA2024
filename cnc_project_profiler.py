@@ -15,12 +15,12 @@ class profiler():
 
     #compute the time the file operation took and the data rate
     def stop_timer(self):
-        self.elapsed_time = self.start_time - time.time()
+        self.elapsed_time = time.time() - self.start_time
         self.times.append(self.elapsed_time)
         self.data_rates.append(self.bytes/self.elapsed_time)
         
     def record_bytes(self, new_bytes):
-        self.bytes += new_bytes
+        self.bytes += new_bytes/1000000
         
     def reset(self):
         self.start_time = 0
