@@ -424,7 +424,7 @@ def main() -> None:
 
           # receive data from the buffer and track time
           file_data += conn.recv(file_length - len(file_data))
-          pf.record_bytes(file_length - len(file_data))
+          pf.record_bytes(len(file_data) - pf.bytes * 1000000)
           pf.stop_timer()
 
         print(f"{"File received":100}")
