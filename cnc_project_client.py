@@ -8,6 +8,7 @@ import re
 import rsa
 import socket
 import time
+import cnc_project_profiler as pro
 
 
 # response codes
@@ -36,6 +37,7 @@ class Command(Enum):
   DISCONNECT = 'DISCONNECT'
   HELP = 'HELP'
 
+pf = pro.profiler()
 
 PORT = 4450
 SIZE: int = 1024  # bytes
@@ -223,8 +225,11 @@ def main() -> None:
 
         # send the file
         with open(file_path, 'rb') as file:
+          pf.start_timer()
           conn.sendfile(file)
-
+          pf.stop_timer()
+          print(f"took{elapsed_time} seconds to send file")
+          
         # wait for the status messages to finish printing
         status_thread.join()
 
@@ -250,6 +255,8 @@ def main() -> None:
 
         print(recv_msg(conn))
         print(recv_msg(conn))
+        pf.reset()
+        
       case Command.LOGIN:
         # if the user is already logged in, they cannot run this command
         if logged_in:
@@ -389,7 +396,10 @@ def main() -> None:
           continue
 
         send_message(conn, Response.ACK)
-
+        
+        #start timing
+        pf.start_timer()
+        
         # get the response code and actual message
         code, msg = get_code_and_msg(response)
 
@@ -413,9 +423,11 @@ def main() -> None:
           # status message
           print(f'{len(file_data)} / {file_length}: {len(file_data) / file_length * 100:.2f}% Complete...', end='\r')
 
-          # receive data from the buffer
+          # receive data from the buffer and track time
           file_data += conn.recv(file_length - len(file_data))
-
+          pf.record_bytes(file_length - len(file_data))
+          pf.stop_timer()
+          
         print(f"{"File received":100}")
 
         # the local path of the file
@@ -426,6 +438,10 @@ def main() -> None:
           file.write(file_data)
 
         print('File saved')
+
+        #generate the statistics csv
+        pf.make_csv()
+          
       case Command.HELP:
         # print all the commands the user can enter
         space: int = 12
