@@ -4,12 +4,12 @@ from threading import Thread
 import atexit
 import base64
 import bcrypt
+import cnc_project_profiler as pro
 import json
 import os
 import rsa
 import socket
 import time
-import cnc_project_profiler as pro
 
 
 # response codes
@@ -253,6 +253,8 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
         print(f"{prefix} Receiving {file_name}...")
         send_message(conn, Response.OK, f"Send: {dir_path} {file_name}")
         wait_for_ack(conn)
+
+        #start profiler timer
         pf.start_timer()
 
         last_time: float = time.time() + TIME_BETWEEN_STATUS_UPDATES
@@ -265,17 +267,24 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
 
           print(f'{len(file_data)} / {file_length}: {len(file_data) / file_length * 100:.2f}% Complete...', end='\r')
 
+          # send the client a status update if the amount of time between updates has passed
           if time.time() - last_time >= TIME_BETWEEN_STATUS_UPDATES:
             send_message(conn, Response.INFO, str(len(file_data)))
             last_time = time.time()
 
-          #track the time it takes to recieve each chunk of data
+
+          # store the data received
           file_data += conn.recv(file_length - len(file_data))
+
+          # track the time it takes to recieve each chunk of data
           pf.record_bytes(len(file_data) - pf.bytes * 1000000)
           pf.stop_timer()
 
         wait_for_ack(conn)
+
+        # store the statistics in a csv file
         pf.make_csv()
+
         # if the file already exists, ask the user to verify that they want to overwrite the file
         if not os.path.exists(file_path):
           print(f"{prefix} {file_name} Received")
@@ -317,7 +326,6 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
         # file processing completed
         files_being_processed.remove(normal_file_path)
 
-        print(f"{prefix} Client successfully uploaded {file_path} in {pf.elapsed_time} seconds")
         send_message(conn, Response.OK, "File uploaded successfully.")
         continue
 

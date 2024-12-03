@@ -3,12 +3,12 @@ from socket import socket as Socket
 from threading import Thread
 from tkinter import filedialog as fd
 import base64
+import cnc_project_profiler as pro
 import os
 import re
 import rsa
 import socket
 import time
-import cnc_project_profiler as pro
 
 
 # response codes
@@ -37,7 +37,6 @@ class Command(Enum):
   DISCONNECT = 'DISCONNECT'
   HELP = 'HELP'
 
-pf = pro.profiler()
 
 PORT = 4450
 SIZE: int = 1024  # bytes
@@ -45,6 +44,8 @@ FORMAT: str = "utf-8"
 
 IP_REGEX: re.Pattern = re.compile(r'^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$')
 MAX_CONNECTION_REQUESTS: int = 50
+
+pf = pro.profiler()
 
 
 # recieve upload status messages from the server
@@ -225,10 +226,15 @@ def main() -> None:
 
         # send the file
         with open(file_path, 'rb') as file:
+          # record start time of the file upload
           pf.start_timer()
+
+          # send the file
           conn.sendfile(file)
+
+          # record stop time of the file upload
           pf.stop_timer()
-          print(f"took{pf.elapsed_time} seconds to send file")
+
         # wait for the status messages to finish printing
         status_thread.join()
 
@@ -254,6 +260,8 @@ def main() -> None:
 
         print(recv_msg(conn))
         print(recv_msg(conn))
+
+        # clear the recorded statistics
         pf.reset()
 
       case Command.LOGIN:
@@ -396,7 +404,7 @@ def main() -> None:
 
         send_message(conn, Response.ACK)
 
-        #start timing
+        # record the start time of the download
         pf.start_timer()
 
         # get the response code and actual message
@@ -424,6 +432,8 @@ def main() -> None:
 
           # receive data from the buffer and track time
           file_data += conn.recv(file_length - len(file_data))
+
+          # record the number of bytes received since the last recording and the current time
           pf.record_bytes(len(file_data) - pf.bytes * 1000000)
           pf.stop_timer()
 
@@ -438,7 +448,7 @@ def main() -> None:
 
         print('File saved')
 
-        #generate the statistics csv
+        # generate the statistics csv
         pf.make_csv()
 
       case Command.HELP:
