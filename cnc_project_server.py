@@ -75,10 +75,9 @@ files_being_processed: list[str] = []
 
 # to handle the clients
 def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
+  # create a profiler object to store profiling data
+  pf: pro.profiler = pro.profiler()
 
-#create a profiler object to store profiling data
-pf = pro.profiler()
-  
   prefix = f"[{addr[0]}:{addr[1]}]:"
 
   print(f"{prefix} CONNECTED")
@@ -269,7 +268,7 @@ pf = pro.profiler()
           if time.time() - last_time >= TIME_BETWEEN_STATUS_UPDATES:
             send_message(conn, Response.INFO, str(len(file_data)))
             last_time = time.time()
-            
+
           #track the time it takes to recieve each chunk of data
           file_data += conn.recv(file_length - len(file_data))
           pf.record_bytes(len(file_data) - pf.bytes * 1000000)

@@ -18,21 +18,21 @@ class profiler():
         self.elapsed_time = time.time() - self.start_time
         self.times.append(self.elapsed_time)
         self.data_rates.append(self.bytes/self.elapsed_time)
-        
+
     def record_bytes(self, new_bytes):
         self.bytes += new_bytes/1000000
-        
+
     def reset(self):
         self.start_time = 0
         self.elapsed_time = 0
         self.bytes = 0
         self.data_rates.clear()
         self.times.clear()
-        
+
     def make_csv(self):
         csvdata = [self.times, self.data_rates]
 
-        with open ('output.csv', mode = 'w', newline = '') as file:
+        with open ('CNC_Project_Data/output.csv', mode = 'w', newline = '') as file:
             writer = csv.writer(file)
             writer.writerows(csvdata)
         self.reset()
