@@ -275,7 +275,7 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
           pf.stop_timer()
 
         wait_for_ack(conn)
-        #pf.make_csv()
+        pf.make_csv()
         # if the file already exists, ask the user to verify that they want to overwrite the file
         if not os.path.exists(file_path):
           print(f"{prefix} {file_name} Received")
