@@ -89,7 +89,14 @@ def get_msg(msg: str) -> str:
 
 # receive a string message from the server
 def recv_msg(conn: Socket, size: int=SIZE) -> str:
-  return conn.recv(size).decode(FORMAT)
+  # wait for a message from the server
+  msg = conn.recv(size).decode(FORMAT)
+
+  # if the message is empty it means the server has closed the connection
+  if not msg:
+    raise ConnectionAbortedError('The server terminated the connection')
+
+  return msg
 
 
 def main() -> None:
