@@ -271,7 +271,7 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
             
           #track the time it takes to recieve each chunk of data
           file_data += conn.recv(file_length - len(file_data))
-          pf.record_bytes(file_length - len(file_data))
+          pf.record_bytes(len(file_data) - pf.bytes * 1000000)
           pf.stop_timer()
 
         wait_for_ack(conn)
