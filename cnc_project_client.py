@@ -326,7 +326,7 @@ def main() -> None:
         send_message(conn, Command.DELETE, file_path)
 
         # display to the user whether the deletion was successful
-        print(recv_msg(conn))
+        print(get_msg(recv_msg(conn)))
       case Command.SUBFOLDER:
         # if the user is not logged in, they cannot run this command
         if not logged_in:
@@ -344,7 +344,7 @@ def main() -> None:
 
           # send the subfolder creation request to the server
           send_message(conn, Command.SUBFOLDER, action, file_path, dir_name)
-          print(recv_msg(conn))
+          print(get_msg(recv_msg(conn)))
           continue
 
         # delete a subfolder
@@ -354,7 +354,7 @@ def main() -> None:
 
           # send the subfolder deletion request to the server
           send_message(conn, Command.SUBFOLDER, action, file_path)
-          print(recv_msg(conn))
+          print(get_msg(recv_msg(conn)))
           continue
 
         # the subfolder action was not recognized
@@ -384,8 +384,8 @@ def main() -> None:
         response = recv_msg(conn)
 
         # if the sever denied the request, download canceled
-        response
         if not check_response_code(response, Response.OK):
+          print(get_msg(response))
           continue
 
         send_message(conn, Response.ACK)
