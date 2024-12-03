@@ -430,9 +430,6 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
           parent_path: str = os.path.normpath(os.path.join(FILE_STORAGE_DIR, split_data[1]) if split_data[1] else FILE_STORAGE_DIR)
           dir_name: str = split_data[2]
           full_path: str = os.path.join(parent_path, dir_name)
-          print(f'Parent path: {parent_path}')
-          print(f'Directory name: {dir_name}')
-          print(f'Full path: {full_path}')
 
           # verify the path is valid
           if not verify_potential_dir_path(parent_path):
