@@ -229,7 +229,6 @@ def main() -> None:
           conn.sendfile(file)
           pf.stop_timer()
           print(f"took{pf.elapsed_time} seconds to send file")
-          
         # wait for the status messages to finish printing
         status_thread.join()
 
@@ -256,7 +255,7 @@ def main() -> None:
         print(recv_msg(conn))
         print(recv_msg(conn))
         pf.reset()
-        
+
       case Command.LOGIN:
         # if the user is already logged in, they cannot run this command
         if logged_in:
@@ -396,10 +395,10 @@ def main() -> None:
           continue
 
         send_message(conn, Response.ACK)
-        
+
         #start timing
         pf.start_timer()
-        
+
         # get the response code and actual message
         code, msg = get_code_and_msg(response)
 
@@ -427,7 +426,7 @@ def main() -> None:
           file_data += conn.recv(file_length - len(file_data))
           pf.record_bytes(file_length - len(file_data))
           pf.stop_timer()
-          
+
         print(f"{"File received":100}")
 
         # the local path of the file
@@ -441,7 +440,7 @@ def main() -> None:
 
         #generate the statistics csv
         pf.make_csv()
-          
+
       case Command.HELP:
         # print all the commands the user can enter
         space: int = 12
