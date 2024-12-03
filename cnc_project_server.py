@@ -9,6 +9,7 @@ import os
 import rsa
 import socket
 import time
+import cnc_project_profiler as pro
 
 
 # response codes
@@ -36,6 +37,8 @@ class Command(Enum):
   DELETE = 'DELETE'
   DISCONNECT = 'DISCONNECT'
 
+#create a profiler object to begin profiling
+pf = pro.profiler()
 
 # get the IP address of the server
 def get_ip() -> str:
@@ -250,6 +253,7 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
         print(f"{prefix} Receiving {file_name}...")
         send_message(conn, Response.OK, f"Send: {dir_path} {file_name}")
         wait_for_ack(conn)
+        pf.start_timer()
 
         last_time: float = time.time() + TIME_BETWEEN_STATUS_UPDATES
         file_data: bytes = b''
@@ -264,8 +268,11 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
           if time.time() - last_time >= TIME_BETWEEN_STATUS_UPDATES:
             send_message(conn, Response.INFO, str(len(file_data)))
             last_time = time.time()
-
+            
+          #track the time it takes to recieve each chunk of data
           file_data += conn.recv(file_length - len(file_data))
+          pf.record_bytes(file_length - len(file_data))
+          pf.stop_timer()
 
         wait_for_ack(conn)
 
@@ -310,7 +317,7 @@ def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
         # file processing completed
         files_being_processed.remove(normal_file_path)
 
-        print(f"{prefix} Client successfully uploaded {file_path}")
+        print(f"{prefix} Client successfully uploaded {file_path} in {pf.elapsed_time} seconds")
         send_message(conn, Response.OK, "File uploaded successfully.")
         continue
 
