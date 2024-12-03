@@ -37,9 +37,6 @@ class Command(Enum):
   DELETE = 'DELETE'
   DISCONNECT = 'DISCONNECT'
 
-#create a profiler object to begin profiling
-pf = pro.profiler()
-
 # get the IP address of the server
 def get_ip() -> str:
   # create a socket and connect to a random address to get the server IP address (totally not sketchy)
@@ -78,6 +75,10 @@ files_being_processed: list[str] = []
 
 # to handle the clients
 def handle_client(conn: Socket, addr: tuple[str, int]) -> None:
+
+#create a profiler object to store profiling data
+pf = pro.profiler()
+  
   prefix = f"[{addr[0]}:{addr[1]}]:"
 
   print(f"{prefix} CONNECTED")
