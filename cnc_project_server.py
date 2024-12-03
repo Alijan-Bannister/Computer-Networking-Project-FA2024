@@ -630,7 +630,11 @@ def get_directory_structure(path: str, indent_lvl: int=0) -> str:
 
 # handle the input from the command line interface
 def handle_cli() -> None:
+  time.sleep(0.1)
+
   prefix: str = "[CLI]:"
+
+  print(f"\n{prefix} Enter 'HELP' for a list of commands.")
 
   while True:
     # get the command input from the CLI
@@ -642,7 +646,7 @@ def handle_cli() -> None:
 
       # if no username was entered, the process was canceled
       if not user:
-        print(f"{prefix} Add login canceled")
+        print(f"{prefix} Add login canceled\n")
         continue
 
       # if the username already exists, cancel the process
@@ -650,7 +654,7 @@ def handle_cli() -> None:
         with open(PASSWORDS_PATH, 'r') as file:
           if user in json.load(file):
             print(f"{prefix} That username already exists")
-            print(f"{prefix} Add login canceled")
+            print(f"{prefix} Add login canceled\n")
             continue
       except FileNotFoundError:
         pass
@@ -660,7 +664,7 @@ def handle_cli() -> None:
 
       # if no password was entered, the process was canceled
       if not pwd:
-        print(f"{prefix} Add login canceled")
+        print(f"{prefix} Add login canceled\n")
         continue
 
       # if the password contains disallowed characters, the process is canceled
@@ -672,7 +676,7 @@ def handle_cli() -> None:
 
       if bad_pwd:
         print(f"{prefix} The entered password contains one or more disallowed characters")
-        print(f"{prefix} Add login canceled")
+        print(f"{prefix} Add login canceled\n")
         continue
 
       # salt and hash the password
@@ -692,12 +696,22 @@ def handle_cli() -> None:
       with open(PASSWORDS_PATH, 'w') as file:
         json.dump(pwds, file)
 
-      print(f"{prefix} Login added successfully")
+      print(f"{prefix} Login added successfully\n")
       continue
 
     if cmd == "SHUTDOWN":
       print(f"{prefix} Shutdown called")
       return
+
+    if cmd == "HELP":
+      space: int = 10
+      print('',
+            f'{'ADD LOGIN':{space}}- Add a user login',
+            f'{'SHUTDOWN':{space}}- Shutdown the server',
+            '',
+            sep='\n'
+            )
+      continue
 
     print(f"{prefix} Command not recognized")
 
