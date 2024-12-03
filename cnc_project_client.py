@@ -228,7 +228,7 @@ def main() -> None:
           pf.start_timer()
           conn.sendfile(file)
           pf.stop_timer()
-          print(f"took{elapsed_time} seconds to send file")
+          print(f"took{pf.elapsed_time} seconds to send file")
           
         # wait for the status messages to finish printing
         status_thread.join()
